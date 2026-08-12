@@ -10,26 +10,26 @@ function buildTeams(count: number): ScheduleTeam[] {
   }))
 }
 
-function endOf(match: GeneratedMatch, teamId: number): 'north' | 'south' {
-  return match.northTeamId === teamId ? 'north' : 'south'
+function sideOf(match: GeneratedMatch, teamId: number): 'blue' | 'white' {
+  return match.blueTeamId === teamId ? 'blue' : 'white'
 }
 
 function involves(match: GeneratedMatch, teamId: number): boolean {
-  return match.northTeamId === teamId || match.southTeamId === teamId
+  return match.blueTeamId === teamId || match.whiteTeamId === teamId
 }
 
 /** The team's ordering for this match, as "defender/attacker". */
 function configOf(match: GeneratedMatch, teamId: number): string {
-  return endOf(match, teamId) === 'north'
-    ? `${match.northDefenderId}/${match.northAttackerId}`
-    : `${match.southDefenderId}/${match.southAttackerId}`
+  return sideOf(match, teamId) === 'blue'
+    ? `${match.blueDefenderId}/${match.blueAttackerId}`
+    : `${match.whiteDefenderId}/${match.whiteAttackerId}`
 }
 
 function positionOf(match: GeneratedMatch, playerId: number): 'defence' | 'attack' | null {
-  if (match.northDefenderId === playerId || match.southDefenderId === playerId) {
+  if (match.blueDefenderId === playerId || match.whiteDefenderId === playerId) {
     return 'defence'
   }
-  if (match.northAttackerId === playerId || match.southAttackerId === playerId) {
+  if (match.blueAttackerId === playerId || match.whiteAttackerId === playerId) {
     return 'attack'
   }
   return null
@@ -87,9 +87,7 @@ describe('generateRoundRobin', () => {
       const inDuel = schedule.filter((match) => match.duel === duel)
       expect(inDuel).toHaveLength(MATCHES_PER_DUEL)
 
-      const teamIds = [
-        ...new Set(inDuel.flatMap((match) => [match.northTeamId, match.southTeamId])),
-      ]
+      const teamIds = [...new Set(inDuel.flatMap((match) => [match.blueTeamId, match.whiteTeamId]))]
       expect(teamIds).toHaveLength(2)
 
       for (const teamId of teamIds) {
@@ -99,9 +97,9 @@ describe('generateRoundRobin', () => {
           continue
         }
 
-        // Each team plays as many matches at each end.
-        expect(count(inDuel, (match) => endOf(match, teamId) === 'north')).toBe(2)
-        expect(count(inDuel, (match) => endOf(match, teamId) === 'south')).toBe(2)
+        // Each team plays as many matches on each side.
+        expect(count(inDuel, (match) => sideOf(match, teamId) === 'blue')).toBe(2)
+        expect(count(inDuel, (match) => sideOf(match, teamId) === 'white')).toBe(2)
 
         // Each player plays as many matches at each position.
         for (const player of team.players) {
@@ -109,18 +107,18 @@ describe('generateRoundRobin', () => {
           expect(count(inDuel, (match) => positionOf(match, player) === 'attack')).toBe(2)
         }
 
-        // Each configuration is played once at each end. This is the one that
-        // keeps "our best configuration" from measuring the end of the table.
+        // Each configuration is played once on each side. This is the one that
+        // keeps "our best configuration" from measuring the side of the table.
         for (const configuration of new Set(inDuel.map((match) => configOf(match, teamId)))) {
           const played = inDuel.filter((match) => configOf(match, teamId) === configuration)
           expect(played).toHaveLength(2)
-          expect(new Set(played.map((match) => endOf(match, teamId))).size).toBe(2)
+          expect(new Set(played.map((match) => sideOf(match, teamId))).size).toBe(2)
         }
       }
     }
   })
 
-  it('swaps exactly one team between consecutive matches, and changes ends every match', () => {
+  it('swaps exactly one team between consecutive matches, and changes sides every match', () => {
     const teams = buildTeams(4)
     const schedule = generateRoundRobin(teams)
 
@@ -129,7 +127,7 @@ describe('generateRoundRobin', () => {
         .filter((match) => match.duel === duel)
         .sort((left, right) => (left.rankInDuel ?? 0) - (right.rankInDuel ?? 0))
 
-      const [homeId, awayId] = [...new Set(inDuel.flatMap((m) => [m.northTeamId, m.southTeamId]))]
+      const [homeId, awayId] = [...new Set(inDuel.flatMap((m) => [m.blueTeamId, m.whiteTeamId]))]
       expect(homeId).toBeDefined()
       expect(awayId).toBeDefined()
       if (homeId === undefined || awayId === undefined) {
@@ -149,8 +147,8 @@ describe('generateRoundRobin', () => {
         const awaySwapped = configOf(previous, awayId) !== configOf(current, awayId)
         expect(homeSwapped !== awaySwapped).toBe(true)
 
-        expect(endOf(current, homeId)).not.toBe(endOf(previous, homeId))
-        expect(endOf(current, awayId)).not.toBe(endOf(previous, awayId))
+        expect(sideOf(current, homeId)).not.toBe(sideOf(previous, homeId))
+        expect(sideOf(current, awayId)).not.toBe(sideOf(previous, awayId))
       }
     }
   })
@@ -172,17 +170,17 @@ describe('generateRoundRobin', () => {
     }
   })
 
-  it('never puts a player on both ends of the same match', () => {
+  it('never puts a player on both sides of the same match', () => {
     for (const teamCount of [3, 4]) {
       for (const match of generateRoundRobin(buildTeams(teamCount))) {
         const onTable = [
-          match.northDefenderId,
-          match.northAttackerId,
-          match.southDefenderId,
-          match.southAttackerId,
+          match.blueDefenderId,
+          match.blueAttackerId,
+          match.whiteDefenderId,
+          match.whiteAttackerId,
         ]
         expect(new Set(onTable).size).toBe(4)
-        expect(match.northTeamId).not.toBe(match.southTeamId)
+        expect(match.blueTeamId).not.toBe(match.whiteTeamId)
       }
     }
   })

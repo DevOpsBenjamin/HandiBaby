@@ -47,12 +47,12 @@ export interface Match {
   duel: number | null
   /** 1 to 4 inside a duel. Null outside the round robin. */
   rankInDuel: number | null
-  northTeamId: number
-  southTeamId: number
-  northDefenderId: number
-  northAttackerId: number
-  southDefenderId: number
-  southAttackerId: number
+  blueTeamId: number
+  whiteTeamId: number
+  blueDefenderId: number
+  blueAttackerId: number
+  whiteDefenderId: number
+  whiteAttackerId: number
   /** Null until the match is played. */
   winnerTeamId: number | null
   /** 0 to 9: the winner always reaches ten. Null until played. */

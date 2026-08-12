@@ -1,22 +1,24 @@
 import type { GeneratedMatch, ScheduleTeam } from './types'
 
 /**
- * The four matches of a duel, as specified in RULES.BABY.MD.
+ * The four matches of a duel, as specified in RULES.BABY.MD. The two sides of
+ * the table are named after their rods: what the document calls nord and sud
+ * is blue and white here, which is what players actually say at the table.
  *
  *   RENCONTRE            EQUIPE X   EQUIPE Y
- *   1     P1/P2  vs  Q1/Q2       nord       sud
- *   2     P1/P2  vs  Q2/Q1       sud        nord
- *   3     P2/P1  vs  Q2/Q1       nord       sud
- *   4     P2/P1  vs  Q1/Q2       sud        nord
+ *   1     P1/P2  vs  Q1/Q2       bleu       blanc
+ *   2     P1/P2  vs  Q2/Q1       blanc      bleu
+ *   3     P2/P1  vs  Q2/Q1       bleu       blanc
+ *   4     P2/P1  vs  Q1/Q2       blanc      bleu
  *
- * Two rules are encoded here: exactly one of the two teams swaps its
- * positions between consecutive matches, and everyone changes end every match.
+ * Two rules are encoded here: exactly one of the two teams swaps its positions
+ * between consecutive matches, and everyone changes side every match.
  */
 const DUEL_PATTERN = [
-  { homeSwapped: false, awaySwapped: false, homeAtNorth: true },
-  { homeSwapped: false, awaySwapped: true, homeAtNorth: false },
-  { homeSwapped: true, awaySwapped: true, homeAtNorth: true },
-  { homeSwapped: true, awaySwapped: false, homeAtNorth: false },
+  { homeSwapped: false, awaySwapped: false, homeAtBlue: true },
+  { homeSwapped: false, awaySwapped: true, homeAtBlue: false },
+  { homeSwapped: true, awaySwapped: true, homeAtBlue: true },
+  { homeSwapped: true, awaySwapped: false, homeAtBlue: false },
 ] as const
 
 export const MATCHES_PER_DUEL = DUEL_PATTERN.length
@@ -31,7 +33,7 @@ function positions(team: ScheduleTeam, swapped: boolean): readonly [number, numb
  * Builds the complete round-robin schedule: every pair of teams meets in a
  * duel, and every duel explores the four position combinations.
  *
- * The whole calendar is generated up front, ends and positions included, so
+ * The whole calendar is generated up front, sides and positions included, so
  * the balances hold whatever order the duels are actually played in.
  */
 export function generateRoundRobin(teams: readonly ScheduleTeam[]): GeneratedMatch[] {
@@ -61,12 +63,12 @@ export function generateRoundRobin(teams: readonly ScheduleTeam[]): GeneratedMat
           phase: 'round-robin',
           duel,
           rankInDuel: index + 1,
-          northTeamId: step.homeAtNorth ? homeTeam.id : awayTeam.id,
-          southTeamId: step.homeAtNorth ? awayTeam.id : homeTeam.id,
-          northDefenderId: step.homeAtNorth ? homeDefender : awayDefender,
-          northAttackerId: step.homeAtNorth ? homeAttacker : awayAttacker,
-          southDefenderId: step.homeAtNorth ? awayDefender : homeDefender,
-          southAttackerId: step.homeAtNorth ? awayAttacker : homeAttacker,
+          blueTeamId: step.homeAtBlue ? homeTeam.id : awayTeam.id,
+          whiteTeamId: step.homeAtBlue ? awayTeam.id : homeTeam.id,
+          blueDefenderId: step.homeAtBlue ? homeDefender : awayDefender,
+          blueAttackerId: step.homeAtBlue ? homeAttacker : awayAttacker,
+          whiteDefenderId: step.homeAtBlue ? awayDefender : homeDefender,
+          whiteAttackerId: step.homeAtBlue ? awayAttacker : homeAttacker,
           winnerTeamId: null,
           loserScore: null,
           enteredAt: null,
