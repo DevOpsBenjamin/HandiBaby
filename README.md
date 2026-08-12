@@ -36,23 +36,22 @@ Le service worker n'est actif qu'en build de production : utiliser
 
 ## Déploiement
 
-CI GitHub Actions (`.github/workflows/build.yml`) : lint et tests unitaires, puis
-build, puis publication sur **Cloudflare Pages** sur `main` uniquement.
+Le déploiement est assuré par l'intégration Git de **Cloudflare Pages**, qui build
+et publie chaque push sur `main` vers <https://handibaby.pages.dev>.
 
-Prérequis côté Cloudflare : un projet Pages nommé `handibaby` créé en mode
-« Direct Upload » (la CI pousse le `dist/`, Cloudflare ne build rien).
+GitHub Actions (`.github/workflows/build.yml`) ne déploie rien : c'est une CI de
+garde-fou (lint, tests unitaires, build) sur les PRs et sur `main`.
 
-Secrets à renseigner dans les paramètres du dépôt GitHub :
+Les variables Supabase se renseignent donc dans les **variables d'environnement
+du projet Cloudflare Pages**, pas dans les secrets GitHub :
 
-| Secret | Rôle |
+| Variable | Rôle |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Token avec la permission *Cloudflare Pages: Edit* |
-| `CLOUDFLARE_ACCOUNT_ID` | Identifiant du compte Cloudflare |
 | `VITE_SUPABASE_URL` | URL du projet Supabase (facultatif) |
 | `VITE_SUPABASE_ANON_KEY` | Clé anon Supabase (facultatif) |
 
-Les deux variables `VITE_*` sont injectées au moment du build : sans elles le
-bundle se construit quand même et l'application reste en local uniquement.
+Sans elles le bundle se construit quand même et l'application reste en local
+uniquement.
 
 ## Architecture
 
