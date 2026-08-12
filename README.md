@@ -34,6 +34,26 @@ npm run dev
 Le service worker n'est actif qu'en build de production : utiliser
 `npm run build && npm run preview` pour tester le mode hors ligne.
 
+## Déploiement
+
+CI GitHub Actions (`.github/workflows/build.yml`) : lint et tests unitaires, puis
+build, puis publication sur **Cloudflare Pages** sur `main` uniquement.
+
+Prérequis côté Cloudflare : un projet Pages nommé `handibaby` créé en mode
+« Direct Upload » (la CI pousse le `dist/`, Cloudflare ne build rien).
+
+Secrets à renseigner dans les paramètres du dépôt GitHub :
+
+| Secret | Rôle |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Token avec la permission *Cloudflare Pages: Edit* |
+| `CLOUDFLARE_ACCOUNT_ID` | Identifiant du compte Cloudflare |
+| `VITE_SUPABASE_URL` | URL du projet Supabase (facultatif) |
+| `VITE_SUPABASE_ANON_KEY` | Clé anon Supabase (facultatif) |
+
+Les deux variables `VITE_*` sont injectées au moment du build : sans elles le
+bundle se construit quand même et l'application reste en local uniquement.
+
 ## Architecture
 
 ```
