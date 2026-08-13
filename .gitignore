@@ -45,3 +45,5 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+docs/prds/
+docs/issues/

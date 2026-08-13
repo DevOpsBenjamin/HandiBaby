@@ -5,13 +5,6 @@ export type TournamentStatus =
   /** Being set up: players and teams not settled, no schedule yet. */
   'draft' | 'round-robin' | 'playoff' | 'finished'
 
-export interface Player {
-  id?: number
-  /** First names are how everyone refers to each other; kept unique. */
-  firstName: string
-  active: boolean
-}
-
 export interface Tournament {
   id?: number
   label: string

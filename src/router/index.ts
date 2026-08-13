@@ -9,6 +9,11 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
     },
+    {
+      path: '/joueurs',
+      name: 'player-pool',
+      component: () => import('@/features/players/views/PlayerPoolView.vue'),
+    },
   ],
 })
 

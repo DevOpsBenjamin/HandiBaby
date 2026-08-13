@@ -1,12 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type { OutboxEntry, SyncCheckpoint } from './types'
-import type {
-  Match,
-  Player,
-  Team,
-  Tournament,
-  TournamentPlayer,
-} from '@/features/tournaments/domain/types'
+import type { Player } from '@/features/players/domain/types'
+import type { Match, Team, Tournament, TournamentPlayer } from '@/features/tournaments/domain/types'
 
 /**
  * The local source of truth. Every view reads from here, online or not.
@@ -33,9 +28,10 @@ export class HandiBabyDatabase extends Dexie {
     })
 
     this.version(2).stores({
-      // The pool outlives editions, so first names are unique: typing a name
-      // that already played reuses that player and keeps cumulative stats whole.
-      players: '++id, &firstName, active',
+      // The pool outlives editions. Uniqueness is on the normalised key rather
+      // than the display fields, so casing and stray spaces cannot fork a
+      // player's history in two.
+      players: '++id, firstName, lastName, &nameKey',
       tournaments: '++id, status, createdAt',
       tournamentPlayers: '++id, tournamentId, playerId, &[tournamentId+playerId]',
       teams: '++id, tournamentId',
