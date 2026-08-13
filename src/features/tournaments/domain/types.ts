@@ -5,18 +5,6 @@ export type TournamentStatus =
   /** Being set up: players and teams not settled, no schedule yet. */
   'draft' | 'round-robin' | 'playoff' | 'finished'
 
-export interface Player {
-  id?: number
-  firstName: string
-  lastName: string
-  /**
-   * Normalised "first last", unique across the pool. Two Lucas are two players;
-   * a retyped "lucas martin" resolves to the existing one instead of creating a
-   * phantom that would split someone's history in two.
-   */
-  nameKey: string
-}
-
 export interface Tournament {
   id?: number
   label: string

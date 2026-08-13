@@ -1,12 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type { OutboxEntry, SyncCheckpoint } from './types'
-import type {
-  Match,
-  Player,
-  Team,
-  Tournament,
-  TournamentPlayer,
-} from '@/features/tournaments/domain/types'
+import type { Player } from '@/features/players/domain/types'
+import type { Match, Team, Tournament, TournamentPlayer } from '@/features/tournaments/domain/types'
 
 /**
  * The local source of truth. Every view reads from here, online or not.
