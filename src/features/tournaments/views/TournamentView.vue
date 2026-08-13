@@ -50,8 +50,16 @@ onMounted(async () => {
         </div>
       </dl>
 
+      <RouterLink
+        v-if="tournament.status === 'draft'"
+        :to="{ name: 'tournament-participants', params: { publicId } }"
+        class="inline-block rounded-lg bg-ball px-4 py-2 font-semibold text-pitch-950"
+      >
+        Joueurs de l’édition
+      </RouterLink>
+
       <p class="text-chalk-400">
-        Les joueurs, les équipes et le calendrier arrivent dans les prochaines livraisons.
+        Les équipes et le calendrier arrivent dans les prochaines livraisons.
       </p>
     </template>
   </section>
