@@ -38,6 +38,12 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/tournois/:publicId/classement',
+      name: 'standings',
+      component: () => import('@/features/tournaments/views/StandingsView.vue'),
+      props: true,
+    },
+    {
       path: '/tournois/:publicId/duels/:duel',
       name: 'duel',
       component: () => import('@/features/tournaments/views/DuelView.vue'),
