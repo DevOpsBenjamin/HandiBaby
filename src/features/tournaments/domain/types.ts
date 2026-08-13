@@ -1,6 +1,14 @@
 export type MatchPhase =
   'round-robin' | 'qualification' | 'elimination' | 'semi-final' | 'final' | 'tiebreak'
 
+/** Which side of the table a team plays on. Decided by the calendar, never at the table. */
+export type TableSide = 'blue' | 'white'
+
+export const SIDE_LABELS: Record<TableSide, string> = {
+  blue: 'Bleu',
+  white: 'Blanc',
+}
+
 export type TournamentStatus =
   /** Being set up: players and teams not settled, no schedule yet. */
   'draft' | 'round-robin' | 'playoff' | 'finished'
