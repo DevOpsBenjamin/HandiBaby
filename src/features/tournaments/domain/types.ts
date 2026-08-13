@@ -7,9 +7,14 @@ export type TournamentStatus =
 
 export interface Player {
   id?: number
-  /** First names are how everyone refers to each other; kept unique. */
   firstName: string
-  active: boolean
+  lastName: string
+  /**
+   * Normalised "first last", unique across the pool. Two Lucas are two players;
+   * a retyped "lucas martin" resolves to the existing one instead of creating a
+   * phantom that would split someone's history in two.
+   */
+  nameKey: string
 }
 
 export interface Tournament {
