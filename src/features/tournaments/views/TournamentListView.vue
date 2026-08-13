@@ -12,6 +12,7 @@ const STATUS_LABELS = {
   'round-robin': 'Phase de classement',
   playoff: 'Playoff',
   finished: 'Terminée',
+  abandoned: 'Abandonnée',
 } as const
 </script>
 

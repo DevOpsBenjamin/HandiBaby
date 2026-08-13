@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HandiBabyDatabase } from '@/core/db/database'
-import { BlankLabelError, TournamentRepository } from '../TournamentRepository'
+import { BlankLabelError, NotInProgressError, TournamentRepository } from '../TournamentRepository'
 import { WeakPassphraseError, verifyPassphrase } from '../domain/passphrase'
 
 const PHRASE = 'babyfoot du mardi'
@@ -102,5 +102,86 @@ describe('TournamentRepository', () => {
       await open?.tournaments.update(created.id ?? 0, { status })
       expect(await repository.listInProgress()).toHaveLength(1)
     }
+  })
+})
+
+/** The repository and the database behind it, which these assertions read directly. */
+function buildBoth() {
+  const repository = buildRepository()
+
+  if (open === null) {
+    throw new Error('database was not opened')
+  }
+
+  return { repository, db: open }
+}
+
+describe('abandoning an edition', () => {
+  it('moves it out of the editions in progress without erasing it', async () => {
+    const { repository, db } = buildBoth()
+    const tournament = await repository.createDraft(draft())
+    const tournamentId = tournament.id ?? 0
+
+    await repository.abandon(tournamentId)
+
+    expect((await db.tournaments.get(tournamentId))?.status).toBe('abandoned')
+    expect(await repository.listInProgress()).toHaveLength(0)
+  })
+
+  it('leaves it reachable among the editions that are over', async () => {
+    const { repository } = buildBoth()
+    const tournament = await repository.createDraft(draft())
+
+    await repository.abandon(tournament.id ?? 0)
+
+    expect((await repository.listFinished()).map((row) => row.publicId)).toEqual([
+      tournament.publicId,
+    ])
+    expect(await repository.findByPublicId(tournament.publicId)).toBeDefined()
+  })
+
+  it('deletes nothing, so the matches already played keep counting', async () => {
+    const { repository, db } = buildBoth()
+    const tournament = await repository.createDraft(draft())
+    const tournamentId = tournament.id ?? 0
+
+    await db.matches.add({
+      tournamentId,
+      phase: 'round-robin',
+      duel: 1,
+      rankInDuel: 1,
+      blueTeamId: 1,
+      whiteTeamId: 2,
+      blueDefenderId: 1,
+      blueAttackerId: 2,
+      whiteDefenderId: 3,
+      whiteAttackerId: 4,
+      winnerTeamId: 1,
+      loserScore: 4,
+      enteredAt: 1,
+    })
+
+    await repository.abandon(tournamentId)
+
+    expect(await db.matches.where('tournamentId').equals(tournamentId).count()).toBe(1)
+  })
+
+  it('refuses to abandon an edition that is already over', async () => {
+    const { repository, db } = buildBoth()
+    const tournament = await repository.createDraft(draft())
+    const tournamentId = tournament.id ?? 0
+
+    await db.tournaments.update(tournamentId, { status: 'finished' })
+
+    await expect(repository.abandon(tournamentId)).rejects.toBeInstanceOf(NotInProgressError)
+  })
+
+  it('refuses to abandon the same edition twice', async () => {
+    const { repository } = buildBoth()
+    const tournament = await repository.createDraft(draft())
+
+    await repository.abandon(tournament.id ?? 0)
+
+    await expect(repository.abandon(tournament.id ?? 0)).rejects.toBeInstanceOf(NotInProgressError)
   })
 })

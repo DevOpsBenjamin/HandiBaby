@@ -11,7 +11,16 @@ export const SIDE_LABELS: Record<TableSide, string> = {
 
 export type TournamentStatus =
   /** Being set up: players and teams not settled, no schedule yet. */
-  'draft' | 'round-robin' | 'playoff' | 'finished'
+  | 'draft'
+  | 'round-robin'
+  | 'playoff'
+  | 'finished'
+  /**
+   * Given up on rather than played out. Nothing is erased: its matches keep
+   * feeding the cumulative statistics, because they were actually played and
+   * dropping them would quietly rewrite the all-time trophies.
+   */
+  | 'abandoned'
 
 export interface Tournament {
   id?: number
