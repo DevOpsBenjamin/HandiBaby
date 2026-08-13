@@ -1,22 +1,31 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { db } from '@/core/container'
+import { db, syncEngine } from '@/core/container'
 import { displayName } from '@/features/players/domain/naming'
 import type { Player } from '@/features/players/domain/types'
+import MatchScoreEntry from '../components/MatchScoreEntry.vue'
+import UnlockPanel from '../components/UnlockPanel.vue'
 import { ScheduleReader, type DuelDetail, type MatchSide } from '../ScheduleReader'
+import { ScoreEntry } from '../ScoreEntry'
 import { useTournamentsStore } from '../stores/tournaments'
+import { WINNING_SCORE, type MatchResult } from '../domain/score'
 import type { Tournament } from '../domain/types'
 
 const props = defineProps<{ publicId: string; duel: string }>()
 
 const reader = new ScheduleReader(db)
+const entry = new ScoreEntry(db, syncEngine)
 const tournaments = useTournamentsStore()
 
 const tournament = ref<Tournament | null>(null)
 const detail = ref<DuelDetail | null>(null)
 const roster = ref<Player[]>([])
 const loaded = ref(false)
+const unlocked = ref(false)
+const error = ref<string | null>(null)
+/** Id of the match being written, so only its own pad greys out. */
+const saving = ref<number | null>(null)
 
 const title = computed(() =>
   detail.value === null
@@ -26,6 +35,7 @@ const title = computed(() =>
 
 onMounted(async () => {
   tournament.value = (await tournaments.find(props.publicId)) ?? null
+  unlocked.value = tournaments.isUnlocked(props.publicId)
 
   const id = tournament.value?.id
   if (id !== undefined) {
@@ -35,6 +45,27 @@ onMounted(async () => {
 
   loaded.value = true
 })
+
+async function record(matchId: number, result: MatchResult): Promise<void> {
+  const edition = tournament.value
+
+  if (edition === null || edition.id === undefined) {
+    return
+  }
+
+  error.value = null
+  saving.value = matchId
+
+  try {
+    await entry.record(edition, matchId, result)
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    saving.value = null
+    // Re-read either way: a refusal means the stored result is not what was displayed.
+    detail.value = await reader.readDuel(edition.id, Number(props.duel))
+  }
+}
 
 function name(player: Player | null): string {
   return player === null ? '—' : displayName(player, roster.value)
@@ -50,7 +81,7 @@ function outcome(match: DuelDetail['matches'][number]): string {
   }
 
   const winner = match.winnerTeamId === match.blue.teamId ? match.blue : match.white
-  return `${winner.teamLabel} 10 – ${match.loserScore}`
+  return `${winner.teamLabel} ${WINNING_SCORE} – ${match.loserScore}`
 }
 </script>
 
@@ -75,6 +106,16 @@ function outcome(match: DuelDetail['matches'][number]): string {
     <p class="text-sm text-chalk-400">
       Les quatre matchs se jouent d’affilée. Les postes et les côtés sont déjà décidés : personne
       n’a à en discuter à la table. Le vainqueur est toujours à dix.
+    </p>
+
+    <UnlockPanel
+      v-if="tournament && !unlocked"
+      :tournament="tournament"
+      @unlocked="unlocked = true"
+    />
+
+    <p v-if="error" role="alert" class="rounded-xl bg-rose-950/60 px-5 py-4 text-sm text-rose-200">
+      {{ error }}
     </p>
 
     <ol class="space-y-3">
@@ -104,9 +145,18 @@ function outcome(match: DuelDetail['matches'][number]): string {
             <p class="text-xs text-chalk-400">{{ match.white.teamLabel }}, défense / attaque</p>
           </div>
         </div>
+
+        <MatchScoreEntry
+          v-if="unlocked && !match.played"
+          :busy="saving === match.id"
+          @submit="record(match.id, $event)"
+        />
       </li>
     </ol>
 
-    <p class="text-chalk-400">La saisie des scores arrive dans la prochaine livraison.</p>
+    <p class="text-sm text-chalk-400">
+      Un score déjà saisi ne peut pas encore être repris : la correction arrive dans la prochaine
+      livraison.
+    </p>
   </section>
 </template>
