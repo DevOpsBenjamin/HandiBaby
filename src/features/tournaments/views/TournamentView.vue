@@ -73,6 +73,13 @@ onMounted(async () => {
       </RouterLink>
 
       <template v-else>
+        <RouterLink
+          :to="{ name: 'standings', params: { publicId } }"
+          class="inline-block rounded-lg border border-pitch-700 px-4 py-2 text-sm hover:border-ball"
+        >
+          Classement et configurations
+        </RouterLink>
+
         <div v-if="remaining.length > 0" class="space-y-3">
           <h3 class="text-sm font-medium tracking-wide text-chalk-400 uppercase">
             À jouer ({{ remaining.length }})
