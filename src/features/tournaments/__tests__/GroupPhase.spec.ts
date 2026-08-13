@@ -18,6 +18,7 @@ import { ScheduleReader } from '../ScheduleReader'
 import { GroupPhaseClosedError, ScoreKeeper } from '../ScoreKeeper'
 import { TournamentRepository } from '../TournamentRepository'
 import { TournamentSetup } from '../TournamentSetup'
+import { ArbitrationMismatchError } from '../domain/arbitration'
 import { buildTeams } from '../domain/draw'
 
 const EDITION = {
@@ -282,5 +283,97 @@ describe('GroupPhase', () => {
     ).rejects.toBeInstanceOf(GroupPhaseClosedError)
 
     expect((await context.db.matches.get(match?.id ?? 0))?.loserScore).toBe(before)
+  })
+})
+
+describe('recording the organisers arbitration', () => {
+  /** The three teams come out exactly level, which is the case the rules stop on. */
+  async function deadlocked() {
+    const context = await started()
+    await enterAllToBlue(context)
+    return context
+  }
+
+  it('still refuses to close while nobody has settled the order', async () => {
+    const context = await deadlocked()
+
+    await expect(context.groupPhase.close(context.tournament)).rejects.toBeInstanceOf(
+      ArbitrationPendingError,
+    )
+    expect(await context.db.frozenEditions.count()).toBe(0)
+  })
+
+  it('names exactly the teams that need arbitrating', async () => {
+    const context = await deadlocked()
+    const preview = await context.groupPhase.preview(context.tournamentId)
+    const teamIds = (await context.db.teams.toArray()).map((team) => team.id ?? 0)
+
+    expect(preview.awaitingArbitration).toHaveLength(1)
+    expect(preview.awaitingArbitration[0]?.slice().sort()).toEqual(teamIds.slice().sort())
+    expect(preview.closable).toBe(false)
+  })
+
+  it('closes on the order the organisers settled, and seeds the bracket from it', async () => {
+    const context = await deadlocked()
+    const preview = await context.groupPhase.preview(context.tournamentId)
+    const group = preview.awaitingArbitration[0] ?? []
+    // Deliberately reversed, so the assertion cannot pass on the default order.
+    const settled = [...group].reverse()
+
+    const choices: Record<number, number> = {}
+    for (const teamId of preview.awaitingChoice) {
+      choices[teamId] =
+        preview.configurations.find((row) => row.teamId === teamId)?.configurations[0]
+          ?.defenderId ?? 0
+    }
+
+    const frozen = await context.groupPhase.close(context.tournament, choices, [settled])
+
+    expect(frozen.standings.map((row) => row.teamId)).toEqual(settled)
+    expect(frozen.standings.map((row) => row.rank)).toEqual([1, 2, 3])
+    expect(frozen.arbitration).toEqual([settled])
+    expect((await context.db.tournaments.get(context.tournamentId))?.status).toBe('playoff')
+  })
+
+  it('keeps saying the rules separated nobody, even once it is settled', async () => {
+    const context = await deadlocked()
+    const preview = await context.groupPhase.preview(context.tournamentId)
+    const group = preview.awaitingArbitration[0] ?? []
+
+    const choices: Record<number, number> = {}
+    for (const teamId of preview.awaitingChoice) {
+      choices[teamId] =
+        preview.configurations.find((row) => row.teamId === teamId)?.configurations[0]
+          ?.defenderId ?? 0
+    }
+
+    const frozen = await context.groupPhase.close(context.tournament, choices, [group])
+
+    // The decision is recorded next to the standings, not folded into them.
+    expect(frozen.standings.slice(0, 2).every((row) => row.separation === 'unresolved')).toBe(true)
+  })
+
+  it('refuses an order that is not the group it claims to settle', async () => {
+    const context = await deadlocked()
+    const preview = await context.groupPhase.preview(context.tournamentId)
+    const group = preview.awaitingArbitration[0] ?? []
+
+    await expect(
+      context.groupPhase.close(context.tournament, {}, [group.slice(0, 2)]),
+    ).rejects.toBeInstanceOf(ArbitrationMismatchError)
+    expect(await context.db.frozenEditions.count()).toBe(0)
+  })
+
+  it('changes nothing for an edition the cascade separated on its own', async () => {
+    const context = await started()
+    await enterEverything(context)
+
+    const preview = await context.groupPhase.preview(context.tournamentId)
+    expect(preview.awaitingArbitration).toEqual([])
+
+    const frozen = await context.groupPhase.close(context.tournament, await choicesFor(context))
+
+    expect(frozen.arbitration).toEqual([])
+    expect(frozen.standings.map((row) => row.rank)).toEqual([1, 2, 3])
   })
 })

@@ -25,6 +25,8 @@ const loaded = ref(false)
 
 /** One entry per team that has to pick, holding the id of the player who defends. */
 const choices = ref<Record<number, number | null>>({})
+/** One entry per group the cascade could not order, held in the settled order. */
+const arbitration = ref<number[][]>([])
 
 const isRoundRobin = computed(() => tournament.value?.status === 'round-robin')
 
@@ -32,12 +34,18 @@ const everyChoiceMade = computed(() =>
   (preview.value?.awaitingChoice ?? []).every((teamId) => choices.value[teamId] != null),
 )
 
+const everyGroupSettled = computed(
+  () => (preview.value?.awaitingArbitration ?? []).length === arbitration.value.length,
+)
+
 const canConfirm = computed(
   () =>
     unlocked.value &&
     isRoundRobin.value &&
-    preview.value?.closable === true &&
+    preview.value !== null &&
+    preview.value.remaining === 0 &&
     everyChoiceMade.value &&
+    everyGroupSettled.value &&
     !closing.value,
 )
 
@@ -53,6 +61,10 @@ onMounted(async () => {
     for (const teamId of preview.value.awaitingChoice) {
       choices.value[teamId] = null
     }
+
+    // Seeded with the order the table happened to present, which carries no
+    // claim: the organisers are the ones deciding it.
+    arbitration.value = preview.value.awaitingArbitration.map((group) => [...group])
   }
 
   loaded.value = true
@@ -60,6 +72,30 @@ onMounted(async () => {
 
 function optionsFor(teamId: number) {
   return view.value?.configurations.find((row) => row.teamId === teamId)?.options ?? []
+}
+
+function teamName(teamId: number): string {
+  return view.value?.rows.find((row) => row.teamId === teamId)?.teamLabel ?? ''
+}
+
+/** Moves a team within its group. The order stands as the organisers' decision. */
+function move(groupIndex: number, from: number, direction: -1 | 1): void {
+  const group = arbitration.value[groupIndex]
+  const to = from + direction
+
+  if (group === undefined || to < 0 || to >= group.length) {
+    return
+  }
+
+  const moved = group[from]
+  const displaced = group[to]
+
+  if (moved === undefined || displaced === undefined) {
+    return
+  }
+
+  group[from] = displaced
+  group[to] = moved
 }
 
 async function confirm(): Promise<void> {
@@ -80,7 +116,7 @@ async function confirm(): Promise<void> {
       }
     }
 
-    await groupPhase.close(edition, picked satisfies ConfigurationChoices)
+    await groupPhase.close(edition, picked satisfies ConfigurationChoices, arbitration.value)
     await router.replace({ name: 'tournament', params: { publicId: props.publicId } })
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught)
@@ -125,15 +161,48 @@ async function confirm(): Promise<void> {
         validation s’ouvrira quand tout sera entré.
       </p>
 
-      <p
-        v-for="group in view?.arbitration ?? []"
-        :key="group.join()"
-        role="alert"
-        class="rounded-xl bg-amber-950/50 px-5 py-4 text-sm text-amber-200"
+      <div
+        v-for="(group, groupIndex) in arbitration"
+        :key="groupIndex"
+        class="space-y-3 rounded-xl bg-amber-950/40 px-5 py-4"
       >
-        {{ group.join(', ') }} ne sont pas départagées par les règles. Le playoff se sème sur le
-        classement : il faut trancher avant de figer.
-      </p>
+        <h3 class="text-sm font-medium text-amber-200">Départage à trancher</h3>
+
+        <p class="text-sm text-amber-200/80">
+          La cascade a été jusqu’au bout sans séparer
+          {{ group.map(teamName).join(', ') }} : mêmes points, même bilan en duel direct et même
+          différence de buts. Les règles s’arrêtent là et laissent l’arbitrage aux organisateurs. Le
+          playoff se sème sur cet ordre, alors c’est à vous de le fixer.
+        </p>
+
+        <ol class="divide-y divide-amber-900/40 overflow-hidden rounded-lg bg-pitch-900">
+          <li
+            v-for="(teamId, position) in group"
+            :key="teamId"
+            class="flex items-center gap-3 px-4 py-2"
+          >
+            <span class="text-sm text-chalk-400">{{ position + 1 }}</span>
+            <span class="mr-auto font-medium">{{ teamName(teamId) }}</span>
+
+            <button
+              type="button"
+              class="rounded-lg border border-pitch-700 px-2 py-1 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100 disabled:opacity-30"
+              :disabled="position === 0"
+              @click="move(groupIndex, position, -1)"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-pitch-700 px-2 py-1 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100 disabled:opacity-30"
+              :disabled="position === group.length - 1"
+              @click="move(groupIndex, position, 1)"
+            >
+              ↓
+            </button>
+          </li>
+        </ol>
+      </div>
 
       <div class="space-y-3">
         <h3 class="text-sm font-medium tracking-wide text-chalk-400 uppercase">Classement final</h3>
