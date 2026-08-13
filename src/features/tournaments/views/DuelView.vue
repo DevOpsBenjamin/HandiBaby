@@ -12,7 +12,7 @@ import { ScheduleReader, type DuelDetail, type MatchSide } from '../ScheduleRead
 import { ScoreKeeper } from '../ScoreKeeper'
 import { useTournamentsStore } from '../stores/tournaments'
 import { WINNING_SCORE, type MatchResult } from '../domain/score'
-import type { Tournament } from '../domain/types'
+import type { TableSide, Tournament } from '../domain/types'
 
 const props = defineProps<{ publicId: string; duel: string }>()
 
@@ -109,6 +109,23 @@ function outcome(match: DuelDetail['matches'][number]): string {
   const winner = match.winnerTeamId === match.blue.teamId ? match.blue : match.white
   return `${winner.teamLabel} ${WINNING_SCORE} – ${match.loserScore}`
 }
+
+/**
+ * A played match reads as a result, not as a disabled row: the winning side is
+ * marked rather than the whole card dimmed. Unplayed keeps the table colours,
+ * which are what people match against the actual baby-foot.
+ */
+function sideClass(match: DuelDetail['matches'][number], side: TableSide): string {
+  const teamId = side === 'blue' ? match.blue.teamId : match.white.teamId
+
+  if (!match.played) {
+    return side === 'blue' ? 'border-sky-500/40 bg-sky-950/30' : 'border-pitch-700 bg-pitch-800/60'
+  }
+
+  return match.winnerTeamId === teamId
+    ? 'border-emerald-500/60 bg-emerald-950/40'
+    : 'border-pitch-800 bg-pitch-900/40 text-chalk-400'
+}
 </script>
 
 <template>
@@ -145,27 +162,22 @@ function outcome(match: DuelDetail['matches'][number]): string {
     </p>
 
     <ol class="space-y-3">
-      <li
-        v-for="match in detail.matches"
-        :key="match.id"
-        class="rounded-xl bg-pitch-900 px-5 py-4"
-        :class="match.played ? 'opacity-70' : ''"
-      >
+      <li v-for="match in detail.matches" :key="match.id" class="rounded-xl bg-pitch-900 px-5 py-4">
         <div class="flex items-baseline justify-between gap-4">
           <span class="text-sm text-chalk-400">Match {{ match.rankInDuel }}</span>
-          <span class="text-sm" :class="match.played ? 'text-chalk-400' : 'text-ball'">
+          <span class="text-sm" :class="match.played ? 'text-emerald-300' : 'text-ball'">
             {{ outcome(match) }}
           </span>
         </div>
 
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
-          <div class="rounded-lg border border-sky-500/40 bg-sky-950/30 px-4 py-3">
+          <div class="rounded-lg border px-4 py-3" :class="sideClass(match, 'blue')">
             <p class="text-xs tracking-wide text-sky-300 uppercase">Bleu</p>
             <p class="mt-1 font-medium">{{ sideName(match.blue) }}</p>
             <p class="text-xs text-chalk-400">{{ match.blue.teamLabel }}, défense / attaque</p>
           </div>
 
-          <div class="rounded-lg border border-pitch-700 bg-pitch-800/60 px-4 py-3">
+          <div class="rounded-lg border px-4 py-3" :class="sideClass(match, 'white')">
             <p class="text-xs tracking-wide text-chalk-400 uppercase">Blanc</p>
             <p class="mt-1 font-medium">{{ sideName(match.white) }}</p>
             <p class="text-xs text-chalk-400">{{ match.white.teamLabel }}, défense / attaque</p>
@@ -180,14 +192,20 @@ function outcome(match: DuelDetail['matches'][number]): string {
           @cancel="correcting = null"
         />
 
-        <button
-          v-else-if="unlocked && match.played"
-          type="button"
-          class="mt-3 rounded-lg border border-pitch-700 px-3 py-1.5 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
-          @click="correcting = match.id"
-        >
-          Corriger
-        </button>
+        <div v-else-if="unlocked && match.played" class="mt-3 flex flex-wrap items-center gap-3">
+          <p class="text-sm text-chalk-400">
+            Résultat actuel :
+            <span class="text-chalk-100">{{ outcome(match) }}</span>
+          </p>
+
+          <button
+            type="button"
+            class="rounded-lg border border-pitch-700 px-3 py-1.5 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
+            @click="correcting = match.id"
+          >
+            Corriger
+          </button>
+        </div>
 
         <MatchHistory
           v-if="(history.get(match.id) ?? []).length > 0"
