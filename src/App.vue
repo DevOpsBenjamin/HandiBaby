@@ -12,7 +12,10 @@ import SyncStatusBadge from '@/components/SyncStatusBadge.vue'
           <RouterLink to="/">HandiBaby</RouterLink>
         </h1>
 
-        <nav class="mr-auto">
+        <nav class="mr-auto flex gap-4">
+          <RouterLink to="/tournois" class="text-sm text-chalk-400 hover:text-chalk-100">
+            Éditions
+          </RouterLink>
           <RouterLink to="/joueurs" class="text-sm text-chalk-400 hover:text-chalk-100">
             Vivier
           </RouterLink>
