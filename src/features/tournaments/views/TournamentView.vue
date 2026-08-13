@@ -21,6 +21,7 @@ const loaded = ref(false)
 
 const isDraft = computed(() => tournament.value?.status === 'draft')
 const isRoundRobin = computed(() => tournament.value?.status === 'round-robin')
+const isPlayoff = computed(() => tournament.value?.status === 'playoff')
 const remaining = computed(() => duels.value.filter((duel) => !duel.complete))
 const played = computed(() => duels.value.filter((duel) => duel.complete))
 
@@ -74,6 +75,14 @@ onMounted(async () => {
       </RouterLink>
 
       <template v-else>
+        <RouterLink
+          v-if="isPlayoff"
+          :to="{ name: 'playoff', params: { publicId } }"
+          class="mr-2 inline-block rounded-lg bg-ball px-4 py-2 font-semibold text-pitch-950"
+        >
+          Playoff
+        </RouterLink>
+
         <RouterLink
           :to="{ name: 'standings', params: { publicId } }"
           class="inline-block rounded-lg border border-pitch-700 px-4 py-2 text-sm hover:border-ball"

@@ -50,6 +50,12 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/tournois/:publicId/playoff',
+      name: 'playoff',
+      component: () => import('@/features/tournaments/views/PlayoffView.vue'),
+      props: true,
+    },
+    {
       path: '/tournois/:publicId/duels/:duel',
       name: 'duel',
       component: () => import('@/features/tournaments/views/DuelView.vue'),
