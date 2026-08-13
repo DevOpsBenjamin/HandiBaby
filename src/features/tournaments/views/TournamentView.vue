@@ -10,6 +10,7 @@ import { JournalReader, type JournalRecord } from '../JournalReader'
 import { ScheduleReader, type MatchView, type ScheduleProgress } from '../ScheduleReader'
 import { ScoreKeeper } from '../ScoreKeeper'
 import { TeamRepository } from '../TeamRepository'
+import { TournamentRepository } from '../TournamentRepository'
 import { useTournamentsStore } from '../stores/tournaments'
 import type { MatchResult } from '../domain/score'
 import { MAXIMUM_TEAM_NAME_LENGTH } from '../domain/teamNames'
@@ -21,6 +22,7 @@ const reader = new ScheduleReader(db)
 const journal = new JournalReader(db)
 const scores = new ScoreKeeper(db, syncEngine)
 const teamRepository = new TeamRepository(db)
+const tournamentRepository = new TournamentRepository(db)
 const tournaments = useTournamentsStore()
 
 const tournament = ref<Tournament | null>(null)
@@ -37,12 +39,17 @@ const correcting = ref<number | null>(null)
 const renaming = ref(false)
 const nameDrafts = ref<Record<number, string>>({})
 const nameError = ref<string | null>(null)
+const abandoning = ref(false)
+const abandonError = ref<string | null>(null)
 
 const isDraft = computed(() => tournament.value?.status === 'draft')
 const isRoundRobin = computed(() => tournament.value?.status === 'round-robin')
 const isPlayoff = computed(() => ['playoff', 'finished'].includes(tournament.value?.status ?? ''))
 
 const remaining = computed(() => matches.value.filter((match) => !match.played))
+const isInProgress = computed(() =>
+  ['draft', 'round-robin', 'playoff'].includes(tournament.value?.status ?? ''),
+)
 
 onMounted(async () => {
   tournament.value = (await tournaments.find(props.publicId)) ?? null
@@ -100,6 +107,24 @@ function playersOf(team: Team): string {
     .map((playerId) => roster.value.find((player) => (player.id ?? 0) === playerId))
     .map((player) => (player === undefined ? '—' : displayName(player, roster.value)))
     .join(' et ')
+}
+
+async function abandon(): Promise<void> {
+  const edition = tournament.value
+
+  if (edition?.id === undefined) {
+    return
+  }
+
+  abandonError.value = null
+
+  try {
+    await tournamentRepository.abandon(edition.id)
+    tournament.value = (await tournaments.find(props.publicId)) ?? null
+    abandoning.value = false
+  } catch (caught) {
+    abandonError.value = caught instanceof Error ? caught.message : String(caught)
+  }
 }
 
 async function rename(teamId: number): Promise<void> {
@@ -163,6 +188,13 @@ async function rename(teamId: number): Promise<void> {
             class="inline-block rounded-lg bg-ball px-4 py-2 font-semibold text-pitch-950"
           >
             Playoff
+          </RouterLink>
+
+          <RouterLink
+            :to="{ name: 'trophies', params: { publicId } }"
+            class="inline-block rounded-lg border border-pitch-700 px-4 py-2 text-sm hover:border-ball"
+          >
+            Trophées
           </RouterLink>
 
           <RouterLink
@@ -285,6 +317,53 @@ async function rename(teamId: number): Promise<void> {
           </RouterLink>
         </div>
       </template>
+
+      <div v-if="isInProgress" class="space-y-3 border-t border-pitch-800 pt-6">
+        <p
+          v-if="abandonError"
+          role="alert"
+          class="rounded-xl bg-rose-950/60 px-5 py-4 text-sm text-rose-200"
+        >
+          {{ abandonError }}
+        </p>
+
+        <button
+          v-if="!abandoning"
+          type="button"
+          class="text-sm text-chalk-400 hover:text-rose-300"
+          @click="abandoning = true"
+        >
+          Abandonner cette édition
+        </button>
+
+        <div v-else class="space-y-3 rounded-xl bg-pitch-900 px-5 py-4">
+          <p class="text-sm text-chalk-400">
+            L’édition quitte la liste des éditions en cours et reste consultable parmi les
+            terminées. Rien n’est supprimé : les matchs déjà joués continuent de compter dans les
+            statistiques de toutes les éditions. C’est sans retour depuis l’application.
+          </p>
+
+          <UnlockPanel v-if="!unlocked" :tournament="tournament" @unlocked="unlocked = true" />
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-lg bg-rose-900 px-4 py-2 text-sm font-semibold text-rose-100 disabled:opacity-40"
+              :disabled="!unlocked"
+              @click="abandon"
+            >
+              Confirmer l’abandon
+            </button>
+            <button
+              type="button"
+              class="rounded-lg px-4 py-2 text-sm text-chalk-400 hover:text-chalk-100"
+              @click="abandoning = false"
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      </div>
     </template>
   </section>
 </template>

@@ -9,6 +9,13 @@ export class BlankLabelError extends Error {
   }
 }
 
+export class NotInProgressError extends Error {
+  constructor() {
+    super('Cette édition n’est plus en cours')
+    this.name = 'NotInProgressError'
+  }
+}
+
 export interface DraftInput {
   label: string
   startDate: string
@@ -43,6 +50,22 @@ export class TournamentRepository {
 
     const id = await this.db.tournaments.add(tournament)
     return { ...tournament, id }
+  }
+
+  /**
+   * Gives up on an edition without erasing anything. Creation is open to
+   * anyone with the link, so the list fills with editions nobody intends to
+   * finish; deleting them would silently rewrite the all-time trophies, which
+   * is worse than a cluttered list.
+   */
+  async abandon(tournamentId: number): Promise<void> {
+    const tournament = await this.db.tournaments.get(tournamentId)
+
+    if (tournament === undefined || !isInProgress(tournament.status)) {
+      throw new NotInProgressError()
+    }
+
+    await this.db.tournaments.update(tournamentId, { status: 'abandoned' })
   }
 
   async findByPublicId(publicId: string): Promise<Tournament | undefined> {
