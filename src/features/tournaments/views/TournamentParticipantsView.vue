@@ -121,15 +121,20 @@ async function drop(player: Player): Promise<void> {
       class="rounded-xl px-5 py-4 text-sm"
       :class="ready ? 'bg-emerald-950/50 text-emerald-200' : 'bg-pitch-900 text-chalk-400'"
     >
-      <template v-if="ready">
-        {{ count }} joueurs, soit {{ count / 2 }} équipes. La composition des équipes peut
-        commencer.
-      </template>
+      <template v-if="ready"> {{ count }} joueurs, soit {{ count / 2 }} équipes. </template>
       <template v-else>
         Il faut {{ SUPPORTED_PLAYER_COUNTS.join(' ou ') }} joueurs pour lancer une édition, il y en
         a {{ count }}. Le format se joue à trois ou quatre équipes de deux : à sept présents, l’un
         reste sur le banc.
       </template>
     </p>
+
+    <RouterLink
+      v-if="ready"
+      :to="{ name: 'tournament-teams', params: { publicId } }"
+      class="inline-block rounded-lg bg-ball px-4 py-2 font-semibold text-pitch-950"
+    >
+      Composer les équipes
+    </RouterLink>
   </section>
 </template>
