@@ -1,6 +1,7 @@
 import type { HandiBabyDatabase } from '@/core/db/database'
 import type { TeamComposition } from './domain/draw'
 import { generateRoundRobin } from './domain/schedule'
+import { resolveTeamLabels } from './domain/teamNames'
 import type { ScheduleTeam, Team } from './domain/types'
 
 export class UnknownTournamentError extends Error {
@@ -67,9 +68,13 @@ export class TournamentSetup {
 
         await this.#assertCoversRoster(tournamentId, compositions)
 
-        const teams: Team[] = compositions.map((composition) => ({
+        // Blanks become the numbered default and collisions are refused here,
+        // so nothing downstream has to cope with two teams answering to one name.
+        const labels = resolveTeamLabels(compositions.map((composition) => composition.label))
+
+        const teams: Team[] = compositions.map((composition, index) => ({
           tournamentId,
-          label: composition.label,
+          label: labels[index] ?? composition.label,
           playerOneId: composition.players[0],
           playerTwoId: composition.players[1],
         }))
