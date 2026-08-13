@@ -77,6 +77,12 @@ export interface Match {
   /** 0 to 9: the winner always reaches ten. Null until played. */
   loserScore: number | null
   enteredAt: number | null
+  /**
+   * Playoff only. A result is freely correctable until someone confirms it here,
+   * and confirming is what opens the round it feeds. Round-robin matches are
+   * frozen in one act instead, when the group phase closes.
+   */
+  validatedAt?: number | null
 }
 
 /** Minimal team shape the schedule generator needs. */

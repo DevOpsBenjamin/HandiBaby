@@ -8,7 +8,12 @@ import { SyncRegistry } from '@/core/sync/registry'
 import { PlayerRepository } from '@/features/players/PlayerRepository'
 import { GroupPhase } from '../GroupPhase'
 import { ParticipantRepository } from '../ParticipantRepository'
-import { Playoff, RoundLockedError, RoundNotReadyError } from '../Playoff'
+import {
+  NoResultToValidateError,
+  Playoff,
+  RoundNotReadyError,
+  RoundValidatedError,
+} from '../Playoff'
 import { ScoreKeeper } from '../ScoreKeeper'
 import { StandingsReader } from '../StandingsReader'
 import { TournamentRepository } from '../TournamentRepository'
@@ -98,7 +103,7 @@ async function intoPlayoff(playerCount = 6) {
   }
 }
 
-/** Wins a round for `teamId`, whichever end it happens to be standing at. */
+/** Types a result for `teamId`, whichever end it happens to be standing at. */
 async function win(
   context: Awaited<ReturnType<typeof intoPlayoff>>,
   phase: PlayoffPhase,
@@ -112,6 +117,17 @@ async function win(
     winningSide: round?.blueTeamId === teamId ? 'blue' : 'white',
     loserScore,
   })
+}
+
+/** Types the result and confirms it, which is what opens the round it feeds. */
+async function play(
+  context: Awaited<ReturnType<typeof intoPlayoff>>,
+  phase: PlayoffPhase,
+  teamId: number,
+  loserScore = 4,
+): Promise<void> {
+  await win(context, phase, teamId, loserScore)
+  await context.playoff.validate(context.tournament, phase)
 }
 
 afterEach(async () => {
@@ -181,13 +197,20 @@ describe('Playoff', () => {
     expect(back?.rounds[0]?.blueTeamId).toBe(first)
   })
 
-  it('opens the round a result feeds, and not before', async () => {
+  it('opens the round a result feeds only once that result is confirmed', async () => {
     const context = await intoPlayoff()
 
     const before = await context.playoff.read(context.tournamentId)
     expect(before?.rounds.find((round) => round.phase === 'semi-final')?.ready).toBe(false)
 
     await win(context, 'qualification', context.seed(2))
+
+    // Typed but not confirmed: nothing downstream moves yet.
+    const typed = await context.playoff.read(context.tournamentId)
+    expect(typed?.rounds.find((round) => round.phase === 'semi-final')?.ready).toBe(false)
+    expect(typed?.rounds[0]?.awaitingValidation).toBe(true)
+
+    await context.playoff.validate(context.tournament, 'qualification')
 
     const after = await context.playoff.read(context.tournamentId)
     const semi = after?.rounds.find((round) => round.phase === 'semi-final')
@@ -207,23 +230,24 @@ describe('Playoff', () => {
     ).rejects.toBeInstanceOf(RoundNotReadyError)
   })
 
-  it('keeps a result correctable until the round it feeds is entered', async () => {
+  it('keeps a typed result correctable right up until it is confirmed', async () => {
     const context = await intoPlayoff()
 
     await win(context, 'qualification', context.seed(2))
-
-    // Still correctable: nothing downstream has been played.
     await win(context, 'qualification', context.seed(1))
 
     const corrected = await context.playoff.read(context.tournamentId)
-    const semi = corrected?.rounds.find((round) => round.phase === 'semi-final')
+    expect(corrected?.rounds[0]?.validated).toBe(false)
 
-    // The other team now takes the second life, and the stale semi is gone.
+    await context.playoff.validate(context.tournament, 'qualification')
+
+    // The corrected winner is the one that propagated: second lost, so second
+    // takes the second life.
+    const semi = (await context.playoff.read(context.tournamentId))?.rounds.find(
+      (round) => round.phase === 'semi-final',
+    )
+
     expect(semi?.homeTeamId).toBe(context.seed(2))
-    expect(corrected?.rounds[0]?.locked).toBe(false)
-
-    // The stored row has to be rebuilt too, not just the pairing computed off
-    // the bracket: a row left behind would stand the wrong two teams up.
     expect([semi?.blueTeamId, semi?.whiteTeamId].sort()).toEqual(
       [context.seed(2), context.seed(3)].sort(),
     )
@@ -232,49 +256,77 @@ describe('Playoff', () => {
     expect(rows).toHaveLength(1)
   })
 
-  it('locks a result once the round it feeds has been entered', async () => {
+  it('locks a result the moment it is confirmed', async () => {
     const context = await intoPlayoff()
 
-    await win(context, 'qualification', context.seed(2))
-    await win(context, 'semi-final', context.seed(1))
+    await play(context, 'qualification', context.seed(2))
 
     const state = await context.playoff.read(context.tournamentId)
-    expect(state?.rounds.find((round) => round.phase === 'qualification')?.locked).toBe(true)
+    expect(state?.rounds[0]).toMatchObject({ validated: true, awaitingValidation: false })
 
     await expect(
       context.playoff.enter(context.tournament, 'qualification', {
         winningSide: 'blue',
         loserScore: 9,
       }),
-    ).rejects.toBeInstanceOf(RoundLockedError)
+    ).rejects.toBeInstanceOf(RoundValidatedError)
   })
 
-  it('runs a whole three-team playoff through to a final', async () => {
+  it('refuses to confirm a round nobody has typed a result for', async () => {
     const context = await intoPlayoff()
 
-    await win(context, 'qualification', context.seed(1))
-    await win(context, 'semi-final', context.seed(2))
+    await expect(
+      context.playoff.validate(context.tournament, 'qualification'),
+    ).rejects.toBeInstanceOf(NoResultToValidateError)
+  })
+
+  it('refuses to confirm the same round twice', async () => {
+    const context = await intoPlayoff()
+
+    await play(context, 'qualification', context.seed(1))
+
+    await expect(
+      context.playoff.validate(context.tournament, 'qualification'),
+    ).rejects.toBeInstanceOf(RoundValidatedError)
+  })
+
+  it('runs a whole three-team playoff through to a final, and closes the edition', async () => {
+    const context = await intoPlayoff()
+
+    await play(context, 'qualification', context.seed(1))
+    await play(context, 'semi-final', context.seed(2))
 
     const state = await context.playoff.read(context.tournamentId)
     const final = state?.rounds.find((round) => round.phase === 'final')
 
     expect(final?.ready).toBe(true)
+    expect(final?.decisive).toBe(true)
     expect([final?.homeTeamId, final?.awayTeamId].sort()).toEqual(
       [context.seed(1), context.seed(2)].sort(),
     )
 
+    await play(context, 'final', context.seed(2))
+
+    expect((await context.db.tournaments.get(context.tournamentId))?.status).toBe('finished')
+  })
+
+  it('leaves the edition running until the last round is confirmed', async () => {
+    const context = await intoPlayoff()
+
+    await play(context, 'qualification', context.seed(1))
+    await play(context, 'semi-final', context.seed(2))
     await win(context, 'final', context.seed(2))
 
-    const finished = await context.playoff.read(context.tournamentId)
-    expect(finished?.rounds.find((round) => round.phase === 'final')?.result).not.toBeNull()
+    // Typed but not confirmed: the tournament is not over yet.
+    expect((await context.db.tournaments.get(context.tournamentId))?.status).toBe('playoff')
   })
 
   it('leaves the standings and the configurations untouched by any playoff result', async () => {
     const context = await intoPlayoff()
     const before = await context.standings.read(context.tournamentId)
 
-    await win(context, 'qualification', context.seed(2), 0)
-    await win(context, 'semi-final', context.seed(3), 0)
+    await play(context, 'qualification', context.seed(2), 0)
+    await play(context, 'semi-final', context.seed(3), 0)
 
     const after = await context.standings.read(context.tournamentId)
 
@@ -285,8 +337,8 @@ describe('Playoff', () => {
   it('never lets the playoff rewrite the frozen bracket it is played from', async () => {
     const context = await intoPlayoff()
 
-    await win(context, 'qualification', context.seed(2))
-    await win(context, 'semi-final', context.seed(1))
+    await play(context, 'qualification', context.seed(2))
+    await play(context, 'semi-final', context.seed(1))
 
     const stored = await context.db.frozenEditions.get(context.tournamentId)
     expect(stored).toEqual(context.frozen)

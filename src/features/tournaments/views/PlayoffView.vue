@@ -34,10 +34,13 @@ const roster = ref<Player[]>([])
 const unlocked = ref(false)
 const error = ref<string | null>(null)
 const saving = ref<PlayoffPhase | null>(null)
+const validating = ref<PlayoffPhase | null>(null)
 const correcting = ref<PlayoffPhase | null>(null)
 const loaded = ref(false)
 
 const isPlayoff = computed(() => tournament.value?.status === 'playoff')
+/** A finished edition still shows its bracket; it just has nothing left to enter. */
+const hasBracket = computed(() => ['playoff', 'finished'].includes(tournament.value?.status ?? ''))
 
 onMounted(async () => {
   tournament.value = (await tournaments.find(props.publicId)) ?? null
@@ -105,6 +108,35 @@ async function chooseEnd(phase: PlayoffPhase, end: TableSide): Promise<void> {
   }
 }
 
+/** The last round has no next one to open: confirming it ends the edition. */
+function validationLabel(round: PlayoffRound): string {
+  if (validating.value === round.phase) {
+    return 'Validation…'
+  }
+
+  return round.decisive ? 'Match fini, clore le tournoi' : 'Match fini, ouvrir le tour suivant'
+}
+
+async function validate(phase: PlayoffPhase): Promise<void> {
+  const edition = tournament.value
+  if (edition === null) {
+    return
+  }
+
+  error.value = null
+  validating.value = phase
+
+  try {
+    await playoff.validate(edition, phase)
+    tournament.value = (await tournaments.find(props.publicId)) ?? edition
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    validating.value = null
+    await refresh()
+  }
+}
+
 async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
   const edition = tournament.value
   if (edition === null) {
@@ -148,7 +180,7 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
       </p>
     </div>
 
-    <p v-if="!isPlayoff" class="rounded-xl bg-pitch-900 px-5 py-4 text-sm text-chalk-400">
+    <p v-if="!hasBracket" class="rounded-xl bg-pitch-900 px-5 py-4 text-sm text-chalk-400">
       Le playoff s’ouvrira quand la phase de classement aura été validée.
     </p>
 
@@ -176,7 +208,11 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
         </ul>
       </div>
 
-      <UnlockPanel v-if="!unlocked" :tournament="tournament" @unlocked="unlocked = true" />
+      <UnlockPanel
+        v-if="!unlocked && isPlayoff"
+        :tournament="tournament"
+        @unlocked="unlocked = true"
+      />
 
       <p
         v-if="error"
@@ -233,7 +269,7 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
             </div>
 
             <div
-              v-if="unlocked && !round.result"
+              v-if="unlocked && isPlayoff && !round.result"
               class="mt-3 flex flex-wrap items-center gap-2 text-sm"
             >
               <span class="text-chalk-400">
@@ -256,7 +292,7 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
             </div>
 
             <MatchScoreEntry
-              v-if="unlocked && (!round.result || correcting === round.phase)"
+              v-if="unlocked && isPlayoff && (!round.result || correcting === round.phase)"
               :busy="saving === round.phase"
               :current="correcting === round.phase ? round.result : null"
               @submit="enter(round.phase, $event)"
@@ -264,24 +300,34 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
             />
 
             <div
-              v-else-if="unlocked && round.result && !round.locked"
-              class="mt-3 flex flex-wrap items-center gap-3"
+              v-else-if="unlocked && isPlayoff && round.awaitingValidation"
+              class="mt-3 space-y-3"
             >
               <p class="text-sm text-chalk-400">
-                Corrigeable tant que le tour suivant n’est pas saisi.
+                Le score reste modifiable tant que le match n’est pas validé.
               </p>
-              <button
-                type="button"
-                class="rounded-lg border border-pitch-700 px-3 py-1.5 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
-                @click="correcting = round.phase"
-              >
-                Corriger
-              </button>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  class="rounded-lg bg-ball px-4 py-2 font-semibold text-pitch-950 disabled:opacity-40"
+                  :disabled="validating === round.phase"
+                  @click="validate(round.phase)"
+                >
+                  {{ validationLabel(round) }}
+                </button>
+
+                <button
+                  type="button"
+                  class="rounded-lg border border-pitch-700 px-3 py-1.5 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
+                  @click="correcting = round.phase"
+                >
+                  Corriger
+                </button>
+              </div>
             </div>
 
-            <p v-else-if="round.locked" class="mt-3 text-sm text-chalk-400">
-              Verrouillé : le tour qu’il alimente est déjà saisi.
-            </p>
+            <p v-else-if="round.validated" class="mt-3 text-sm text-chalk-400">Match validé.</p>
           </template>
         </li>
       </ol>

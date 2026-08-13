@@ -1,12 +1,7 @@
 import type { HandiBabyDatabase } from '@/core/db/database'
 import type { PlayoffPhase } from './domain/bracket'
 import type { FrozenConfiguration, FrozenEdition } from './domain/freeze'
-import {
-  dependents,
-  resolveBracket,
-  type PlayoffOutcome,
-  type ResolvedPairing,
-} from './domain/playoff'
+import { resolveBracket, type PlayoffOutcome, type ResolvedPairing } from './domain/playoff'
 import { readResult, type MatchResult } from './domain/score'
 import type { Match, TableSide, Tournament } from './domain/types'
 import { ScoreKeeper } from './ScoreKeeper'
@@ -20,16 +15,23 @@ export class PlayoffNotOpenError extends Error {
 
 export class RoundNotReadyError extends Error {
   constructor() {
-    super('Ce tour attend le résultat du tour qui l’alimente')
+    super('Ce tour attend la validation du tour qui l’alimente')
     this.name = 'RoundNotReadyError'
   }
 }
 
-/** A result that has already propagated cannot be taken back without unmaking the rest. */
-export class RoundLockedError extends Error {
+/** Confirmed results are what the rest of the bracket is built on. */
+export class RoundValidatedError extends Error {
   constructor() {
-    super('Ce match est verrouillé : le tour qu’il alimente est déjà saisi')
-    this.name = 'RoundLockedError'
+    super('Ce match est validé : son résultat n’est plus modifiable')
+    this.name = 'RoundValidatedError'
+  }
+}
+
+export class NoResultToValidateError extends Error {
+  constructor() {
+    super('Ce match n’a pas encore de résultat à valider')
+    this.name = 'NoResultToValidateError'
   }
 }
 
@@ -38,8 +40,11 @@ export interface PlayoffRound extends ResolvedPairing {
   blueTeamId: number | null
   whiteTeamId: number | null
   result: MatchResult | null
-  /** Locked because the round it feeds has been entered. */
-  locked: boolean
+  validated: boolean
+  /** A result is in and nobody has confirmed it yet: the round is waiting on a decision. */
+  awaitingValidation: boolean
+  /** The last round of the bracket, whose validation ends the edition. */
+  decisive: boolean
 }
 
 export interface PlayoffState {
@@ -50,9 +55,13 @@ export interface PlayoffState {
 /**
  * Runs the Page system off the bracket frozen when the group phase closed.
  *
- * Nothing here is recomputed from the round-robin: the seeding, the pairings
- * and the configurations are read back from the freeze, so the playoff cannot
- * be reshaped by anything that happens while it is being played.
+ * Nothing here is recomputed from the round-robin: the seeding, the pairings and
+ * the configurations are read back from the freeze, so the playoff cannot be
+ * reshaped by anything that happens while it is being played.
+ *
+ * Each round is confirmed by hand. A typed result stays freely correctable until
+ * then, and confirming is what opens the round it feeds, so a wrong winner can
+ * never propagate before somebody looked at it.
  */
 export class Playoff {
   constructor(
@@ -69,57 +78,45 @@ export class Playoff {
 
     const matches = await this.#playoffMatches(tournamentId)
     const pairings = resolveBracket(frozen.bracket, frozen.standings, this.#outcomes(matches))
+    const last = frozen.bracket[frozen.bracket.length - 1]?.phase
 
     return {
       frozen,
       rounds: pairings.map((pairing) => {
         const match = matches.get(pairing.phase)
-        const entered = match === undefined ? null : readResult(match)
+        const result = match === undefined ? null : readResult(match)
+        const validated = match?.validatedAt != null
 
         return {
           ...pairing,
           matchId: match?.id ?? null,
           blueTeamId: match?.blueTeamId ?? null,
           whiteTeamId: match?.whiteTeamId ?? null,
-          result:
-            entered === null || match === undefined
-              ? null
-              : {
-                  winningSide: entered.winningSide,
-                  loserScore: entered.loserScore,
-                },
-          locked: this.#isLocked(frozen, pairing.phase, matches),
+          result,
+          validated,
+          awaitingValidation: result !== null && !validated,
+          decisive: pairing.phase === last,
         }
       }),
     }
   }
 
   /**
-   * Writes a row for every round whose two sides are known. Idempotent, so it
-   * can run on every read: a round becomes playable the moment the round
-   * feeding it is entered, and it needs somewhere to hold the end choice before
+   * Writes a row for every round whose two sides are settled. Idempotent, so it
+   * can run on every read: a round needs somewhere to hold its end choice before
    * anyone has a score to type.
    */
   async ensureRounds(tournament: Tournament): Promise<void> {
     const tournamentId = tournament.id ?? 0
-    const frozen = await this.db.frozenEditions.get(tournamentId)
-
-    if (frozen === undefined || tournament.status !== 'playoff') {
-      throw new PlayoffNotOpenError()
-    }
-
+    const frozen = await this.#requireFrozen(tournament)
     const matches = await this.#playoffMatches(tournamentId)
     const pairings = resolveBracket(frozen.bracket, frozen.standings, this.#outcomes(matches))
 
     for (const pairing of pairings) {
-      if (!pairing.ready || matches.has(pairing.phase)) {
-        continue
-      }
-
       const home = pairing.homeTeamId
       const away = pairing.awayTeamId
 
-      if (home === null || away === null) {
+      if (!pairing.ready || matches.has(pairing.phase) || home === null || away === null) {
         continue
       }
 
@@ -134,12 +131,7 @@ export class Playoff {
   /** Puts the privileged team on the end it wants. Only until the match is played. */
   async chooseEnd(tournament: Tournament, phase: PlayoffPhase, end: TableSide): Promise<void> {
     const tournamentId = tournament.id ?? 0
-    const frozen = await this.db.frozenEditions.get(tournamentId)
-
-    if (frozen === undefined || tournament.status !== 'playoff') {
-      throw new PlayoffNotOpenError()
-    }
-
+    const frozen = await this.#requireFrozen(tournament)
     const matches = await this.#playoffMatches(tournamentId)
     const match = matches.get(phase)
 
@@ -148,7 +140,7 @@ export class Playoff {
     }
 
     if (readResult(match) !== null) {
-      throw new RoundLockedError()
+      throw new RoundValidatedError()
     }
 
     const pairing = resolveBracket(frozen.bracket, frozen.standings, this.#outcomes(matches)).find(
@@ -166,33 +158,22 @@ export class Playoff {
     const blue = end === 'blue' ? privileged : opponent
     const white = end === 'blue' ? opponent : privileged
 
-    await this.db.matches.update(match.id ?? 0, {
-      ...this.#sides(blue, white, frozen),
-    })
+    await this.db.matches.update(match.id ?? 0, this.#sides(blue, white, frozen))
   }
 
-  /**
-   * Enters or replaces the result of a round. The upstream guard lives here
-   * rather than in the score keeper, because it is a rule about the bracket
-   * rather than about a match.
-   */
+  /** Enters or replaces the result of a round. Refused once the round is confirmed. */
   async enter(tournament: Tournament, phase: PlayoffPhase, result: MatchResult): Promise<void> {
-    const tournamentId = tournament.id ?? 0
-    const frozen = await this.db.frozenEditions.get(tournamentId)
+    await this.#requireFrozen(tournament)
 
-    if (frozen === undefined || tournament.status !== 'playoff') {
-      throw new PlayoffNotOpenError()
-    }
-
-    const matches = await this.#playoffMatches(tournamentId)
+    const matches = await this.#playoffMatches(tournament.id ?? 0)
     const match = matches.get(phase)
 
     if (match === undefined) {
       throw new RoundNotReadyError()
     }
 
-    if (this.#isLocked(frozen, phase, matches)) {
-      throw new RoundLockedError()
+    if (match.validatedAt != null) {
+      throw new RoundValidatedError()
     }
 
     const matchId = match.id ?? 0
@@ -202,59 +183,60 @@ export class Playoff {
     } else {
       await this.keeper.correct(tournament, matchId, result)
     }
-
-    // A changed winner reshapes everything downstream, so stale rows go first.
-    await this.#clearDependents(frozen, phase, tournamentId)
-    await this.ensureRounds(tournament)
   }
 
-  async #clearDependents(
-    frozen: FrozenEdition,
-    phase: PlayoffPhase,
-    tournamentId: number,
-  ): Promise<void> {
+  /**
+   * Confirms a round: locks its result and opens the round it feeds.
+   *
+   * Deliberately a separate act from typing the score. The score is typed at the
+   * table, often by whoever is nearest; opening the next round is a decision
+   * that the four people standing there have agreed on the result.
+   */
+  async validate(tournament: Tournament, phase: PlayoffPhase): Promise<void> {
+    const tournamentId = tournament.id ?? 0
+    const frozen = await this.#requireFrozen(tournament)
     const matches = await this.#playoffMatches(tournamentId)
-    const outcomes = this.#outcomes(matches)
-    const pairings = resolveBracket(frozen.bracket, frozen.standings, outcomes)
+    const match = matches.get(phase)
 
-    for (const downstream of dependents(frozen.bracket, phase)) {
-      const match = matches.get(downstream)
-      const pairing = pairings.find((candidate) => candidate.phase === downstream)
+    if (match === undefined) {
+      throw new RoundNotReadyError()
+    }
 
-      if (match === undefined || pairing === undefined) {
-        continue
-      }
+    if (readResult(match) === null) {
+      throw new NoResultToValidateError()
+    }
 
-      const stillRight =
-        pairing.homeTeamId !== null &&
-        pairing.awayTeamId !== null &&
-        [pairing.homeTeamId, pairing.awayTeamId].every((teamId) =>
-          [match.blueTeamId, match.whiteTeamId].includes(teamId),
-        )
+    if (match.validatedAt != null) {
+      throw new RoundValidatedError()
+    }
 
-      if (!stillRight) {
-        await this.db.matches.delete(match.id ?? 0)
-        await this.#clearDependents(frozen, downstream, tournamentId)
-      }
+    await this.db.matches.update(match.id ?? 0, { validatedAt: Date.now() })
+    await this.ensureRounds(tournament)
+
+    // Confirming the last round is what ends the edition: there is nothing left
+    // for it to open.
+    if (phase === frozen.bracket[frozen.bracket.length - 1]?.phase) {
+      await this.db.tournaments.update(tournamentId, { status: 'finished' })
     }
   }
 
-  #isLocked(
-    frozen: FrozenEdition,
-    phase: PlayoffPhase,
-    matches: ReadonlyMap<PlayoffPhase, Match>,
-  ): boolean {
-    return dependents(frozen.bracket, phase).some((downstream) => {
-      const match = matches.get(downstream)
-      return match !== undefined && readResult(match) !== null
-    })
+  async #requireFrozen(tournament: Tournament): Promise<FrozenEdition> {
+    const frozen = await this.db.frozenEditions.get(tournament.id ?? 0)
+    const current = await this.db.tournaments.get(tournament.id ?? 0)
+
+    if (frozen === undefined || current?.status !== 'playoff') {
+      throw new PlayoffNotOpenError()
+    }
+
+    return frozen
   }
 
+  /** Only confirmed results seed anything: an unconfirmed one opens no round. */
   #outcomes(matches: ReadonlyMap<PlayoffPhase, Match>): Map<PlayoffPhase, PlayoffOutcome> {
     const outcomes = new Map<PlayoffPhase, PlayoffOutcome>()
 
     for (const [phase, match] of matches) {
-      if (match.winnerTeamId === null) {
+      if (match.winnerTeamId === null || match.validatedAt == null) {
         continue
       }
 
@@ -296,6 +278,7 @@ export class Playoff {
       winnerTeamId: null,
       loserScore: null,
       enteredAt: null,
+      validatedAt: null,
     }
   }
 
@@ -309,16 +292,16 @@ export class Playoff {
         chosen: false,
       }
 
-    const blueposts = posts(blue)
-    const whiteposts = posts(white)
+    const bluePosts = posts(blue)
+    const whitePosts = posts(white)
 
     return {
       blueTeamId: blue,
       whiteTeamId: white,
-      blueDefenderId: blueposts.defenderId,
-      blueAttackerId: blueposts.attackerId,
-      whiteDefenderId: whiteposts.defenderId,
-      whiteAttackerId: whiteposts.attackerId,
+      blueDefenderId: bluePosts.defenderId,
+      blueAttackerId: bluePosts.attackerId,
+      whiteDefenderId: whitePosts.defenderId,
+      whiteAttackerId: whitePosts.attackerId,
     }
   }
 }
