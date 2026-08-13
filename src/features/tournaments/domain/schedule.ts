@@ -36,6 +36,29 @@ function positions(team: ScheduleTeam, swapped: boolean): readonly [number, numb
  * The whole calendar is generated up front, sides and positions included, so
  * the balances hold whatever order the duels are actually played in.
  */
+/**
+ * Spreads each duel's four matches across the calendar instead of leaving them
+ * in a block, by taking the first match of every duel, then the second, and so
+ * on. Two consecutive matches therefore never come from the same duel, so a
+ * pairing no longer monopolises an hour of the table.
+ *
+ * With three teams every duel shares a team with both others, so back-to-back
+ * matches will still share players. That is arithmetic, not something to fix.
+ */
+function interleaveDuels(matches: readonly GeneratedMatch[]): GeneratedMatch[] {
+  const byRank = new Map<number, GeneratedMatch[]>()
+
+  for (const match of matches) {
+    const rank = match.rankInDuel ?? 0
+    byRank.set(rank, [...(byRank.get(rank) ?? []), match])
+  }
+
+  return [...byRank.entries()]
+    .sort(([left], [right]) => left - right)
+    .flatMap(([, group]) => group)
+    .map((match, index) => ({ ...match, order: index }))
+}
+
 export function generateRoundRobin(teams: readonly ScheduleTeam[]): GeneratedMatch[] {
   if (teams.length < 3 || teams.length > 4) {
     throw new Error(`A tournament needs 3 or 4 teams, received ${teams.length}`)
@@ -77,5 +100,5 @@ export function generateRoundRobin(teams: readonly ScheduleTeam[]): GeneratedMat
     }
   }
 
-  return matches
+  return interleaveDuels(matches)
 }

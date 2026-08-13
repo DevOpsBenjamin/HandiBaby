@@ -85,8 +85,8 @@ describe('StandingsReader', () => {
 
   it('reflects a score the moment it is entered, with no network', async () => {
     const { keeper, schedule, standings, tournament, tournamentId } = await started()
-    const detail = await schedule.readDuel(tournamentId, 1)
-    const [first] = detail?.matches ?? []
+    const roundRobin = await schedule.listMatches(tournamentId)
+    const [first] = roundRobin
 
     await keeper.record(tournament, first?.id ?? 0, { winningSide: 'blue', loserScore: 4 })
 
@@ -101,8 +101,8 @@ describe('StandingsReader', () => {
 
   it('follows a correction rather than keeping the first result', async () => {
     const { keeper, schedule, standings, tournament, tournamentId } = await started()
-    const detail = await schedule.readDuel(tournamentId, 1)
-    const [first] = detail?.matches ?? []
+    const roundRobin = await schedule.listMatches(tournamentId)
+    const [first] = roundRobin
     const matchId = first?.id ?? 0
 
     await keeper.record(tournament, matchId, { winningSide: 'blue', loserScore: 4 })
@@ -127,9 +127,11 @@ describe('StandingsReader', () => {
 
   it('names the configurations by player once a duel has been played', async () => {
     const { keeper, schedule, standings, tournament, tournamentId } = await started()
-    const detail = await schedule.readDuel(tournamentId, 1)
+    const roundRobin = await schedule.listMatches(tournamentId)
 
-    for (const match of detail?.matches ?? []) {
+    // The calendar interleaves the duels, so one duel is selected rather than
+    // taken as the first four rows.
+    for (const match of roundRobin.filter((candidate) => candidate.duel === 1)) {
       await keeper.record(tournament, match.id, { winningSide: 'blue', loserScore: 2 })
     }
 

@@ -1,21 +1,6 @@
 import type { HandiBabyDatabase } from '@/core/db/database'
 import type { Player } from '@/features/players/domain/types'
-import { MATCHES_PER_DUEL } from './domain/schedule'
 import type { Match } from './domain/types'
-
-export interface DuelTeam {
-  id: number
-  label: string
-  players: Player[]
-}
-
-export interface DuelSummary {
-  duel: number
-  teams: DuelTeam[]
-  playedMatches: number
-  totalMatches: number
-  complete: boolean
-}
 
 export interface MatchSide {
   teamId: number
@@ -26,6 +11,10 @@ export interface MatchSide {
 
 export interface MatchView {
   id: number
+  /** Position in the calendar's reading order, identical on every device. */
+  order: number
+  /** Kept for the tie-break, not shown as a grouping. */
+  duel: number
   rankInDuel: number
   blue: MatchSide
   white: MatchSide
@@ -34,25 +23,18 @@ export interface MatchView {
   played: boolean
 }
 
-export interface DuelDetail {
-  duel: number
-  teams: DuelTeam[]
-  matches: MatchView[]
-}
-
 export interface ScheduleProgress {
-  playedDuels: number
-  totalDuels: number
   playedMatches: number
   totalMatches: number
 }
 
 /**
- * Assembles what the screens need out of the flat match rows: who is in a duel,
- * how far along it is, and who stands where in each match.
+ * Assembles what the screens need out of the flat match rows: who stands where,
+ * and how far along the edition is.
  *
- * The planning unit is the duel, not the match. A duel needs four named people
- * around the table at the same time, which is why the list is read by names.
+ * The planning unit is the match. Four named people are rarely free for four
+ * matches running, and whoever is at the table should be able to play whatever
+ * is left rather than the one pairing that needs someone who went home.
  */
 export class ScheduleReader {
   constructor(private readonly db: HandiBabyDatabase) {}
@@ -67,64 +49,25 @@ export class ScheduleReader {
   }
 
   async progress(tournamentId: number): Promise<ScheduleProgress> {
-    const duels = await this.listDuels(tournamentId)
+    const matches = await this.listMatches(tournamentId)
 
     return {
-      playedDuels: duels.filter((duel) => duel.complete).length,
-      totalDuels: duels.length,
-      playedMatches: duels.reduce((total, duel) => total + duel.playedMatches, 0),
-      totalMatches: duels.reduce((total, duel) => total + duel.totalMatches, 0),
+      playedMatches: matches.filter((match) => match.played).length,
+      totalMatches: matches.length,
     }
   }
 
-  async listDuels(tournamentId: number): Promise<DuelSummary[]> {
+  /** Every round-robin match, in the order the calendar stored. */
+  async listMatches(tournamentId: number): Promise<MatchView[]> {
     const { matches, teams, players } = await this.#load(tournamentId)
-    const byDuel = new Map<number, Match[]>()
 
-    for (const match of matches) {
-      if (match.duel === null) {
-        continue
-      }
-      byDuel.set(match.duel, [...(byDuel.get(match.duel) ?? []), match])
-    }
-
-    return [...byDuel.entries()]
-      .sort(([left], [right]) => left - right)
-      .map(([duel, duelMatches]) => {
-        const teamIds = [
-          ...new Set(duelMatches.flatMap((match) => [match.blueTeamId, match.whiteTeamId])),
-        ]
-        const playedMatches = duelMatches.filter((match) => match.winnerTeamId !== null).length
-
-        return {
-          duel,
-          teams: teamIds.map((id) => this.#team(id, teams, players)),
-          playedMatches,
-          totalMatches: duelMatches.length,
-          complete: playedMatches === MATCHES_PER_DUEL,
-        }
-      })
-  }
-
-  async readDuel(tournamentId: number, duel: number): Promise<DuelDetail | null> {
-    const { matches, teams, players } = await this.#load(tournamentId)
-    const duelMatches = matches
-      .filter((match) => match.duel === duel)
-      .sort((left, right) => (left.rankInDuel ?? 0) - (right.rankInDuel ?? 0))
-
-    if (duelMatches.length === 0) {
-      return null
-    }
-
-    const teamIds = [
-      ...new Set(duelMatches.flatMap((match) => [match.blueTeamId, match.whiteTeamId])),
-    ]
-
-    return {
-      duel,
-      teams: teamIds.map((id) => this.#team(id, teams, players)),
-      matches: duelMatches.map((match) => ({
+    return matches
+      .map((match) => ({ match, position: readingPosition(match) }))
+      .sort((left, right) => left.position - right.position)
+      .map(({ match, position }) => ({
         id: match.id ?? 0,
+        order: position,
+        duel: match.duel ?? 0,
         rankInDuel: match.rankInDuel ?? 0,
         blue: {
           teamId: match.blueTeamId,
@@ -141,8 +84,7 @@ export class ScheduleReader {
         winnerTeamId: match.winnerTeamId,
         loserScore: match.loserScore,
         played: match.winnerTeamId !== null,
-      })),
-    }
+      }))
   }
 
   async #load(tournamentId: number) {
@@ -158,20 +100,13 @@ export class ScheduleReader {
       players: new Map(players.map((player) => [player.id ?? 0, player])),
     }
   }
+}
 
-  #team(
-    id: number,
-    teams: Map<number, { label: string; playerOneId: number; playerTwoId: number }>,
-    players: Map<number, Player>,
-  ): DuelTeam {
-    const team = teams.get(id)
-
-    return {
-      id,
-      label: team?.label ?? '',
-      players: [team?.playerOneId, team?.playerTwoId]
-        .map((playerId) => (playerId === undefined ? undefined : players.get(playerId)))
-        .filter((player): player is Player => player !== undefined),
-    }
-  }
+/**
+ * Editions generated before the calendar carried a reading order fall back to
+ * their duel grouping, which is what they were played in and is just as
+ * deterministic on every device.
+ */
+function readingPosition(match: Match): number {
+  return match.order ?? (match.duel ?? 0) * 100 + (match.rankInDuel ?? 0)
 }
