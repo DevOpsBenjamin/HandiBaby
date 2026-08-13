@@ -6,6 +6,7 @@ import type { Match, MatchPhase } from '../types'
 const A = 1
 const B = 2
 const C = 3
+const D = 4
 
 interface Played {
   blue: number
@@ -151,6 +152,10 @@ describe('the tie-break cascade', () => {
     expect(first?.teamId).toBe(A)
     expect(first?.separation).toBe('goal-difference')
     expect(Number(first?.goalDifference)).toBeGreaterThan(Number(second?.goalDifference))
+
+    // Three teams level on points, and the cascade still agrees with itself:
+    // detecting circles must not turn every tie into an arbitration.
+    expect(table.arbitration).toEqual([])
   })
 
   it('puts the duel record ahead of general goal difference, which is the point of the order', () => {
@@ -192,6 +197,59 @@ describe('the tie-break cascade', () => {
     expect(table.rows[0]?.rank).toBe(table.rows[1]?.rank)
   })
 
+  it('refuses to order a circle of duel wins, whatever the goal differences say', () => {
+    // 1 beats 2, 2 beats 3, 3 beats 1, every duel three to one. Four wins each,
+    // so twelve points each, and three different goal differences. There is no
+    // first place in a circle: ordering it would tell the team that won three
+    // to one it finished last, and cite the duel record while doing it.
+    const matches = [
+      ...duel(A, B, 3, 0),
+      ...duel(B, A, 1, 0),
+      ...duel(B, C, 3, 5),
+      ...duel(C, B, 1, 5),
+      ...duel(C, A, 3, 8),
+      ...duel(A, C, 1, 8),
+    ]
+
+    const table = buildStandings([A, B, C], matches)
+
+    expect(table.rows.every((row) => row.points === 12)).toBe(true)
+    // Distinct goal differences: grouping on them would miss this entirely.
+    expect(new Set(table.rows.map((row) => row.goalDifference)).size).toBe(3)
+
+    expect(table.arbitration).toEqual([[A, B, C]])
+    expect(new Set(table.rows.map((row) => row.rank)).size).toBe(1)
+    expect(table.rows.slice(0, 2).every((row) => row.separation === 'unresolved')).toBe(true)
+  })
+
+  it('refuses a circle of four teams as readily as one of three', () => {
+    // A beats B, B beats C, C beats D, D beats A, the other two duels split
+    // evenly. Six wins each, and four goal differences that are all different,
+    // so nothing but the circle itself can catch this.
+    const matches = [
+      ...duel(A, B, 3, 0),
+      ...duel(B, A, 1, 0),
+      ...duel(B, C, 3, 5),
+      ...duel(C, B, 1, 5),
+      ...duel(C, D, 3, 8),
+      ...duel(D, C, 1, 8),
+      ...duel(D, A, 3, 2),
+      ...duel(A, D, 1, 2),
+      ...duel(A, C, 2, 4),
+      ...duel(C, A, 2, 4),
+      ...duel(B, D, 2, 6),
+      ...duel(D, B, 2, 6),
+    ]
+
+    const table = buildStandings([A, B, C, D], matches)
+
+    expect(table.rows.every((row) => row.points === 18)).toBe(true)
+    expect(new Set(table.rows.map((row) => row.goalDifference)).size).toBe(4)
+
+    expect(table.arbitration).toEqual([[A, B, C, D]])
+    expect(new Set(table.rows.map((row) => row.rank)).size).toBe(1)
+  })
+
   it('hands a three-way tie to the organisers, as the rules say to', () => {
     // Each team beats the next in a circle, so nothing separates any of them.
     const matches = [
@@ -208,6 +266,14 @@ describe('the tie-break cascade', () => {
     expect(table.arbitration).toEqual([[A, B, C]])
     expect(new Set(table.rows.map((row) => row.rank)).size).toBe(1)
     expect(table.rows.slice(0, 2).every((row) => row.separation === 'unresolved')).toBe(true)
+  })
+
+  it('has nothing to arbitrate before a single match has been played', () => {
+    // Everyone is level on nothing, which is not a tie anyone has to settle.
+    const table = buildStandings([A, B, C], [])
+
+    expect(table.rows.every((row) => row.played === 0)).toBe(true)
+    expect(table.arbitration).toEqual([])
   })
 
   it('reports no arbitration when the cascade decided everything', () => {

@@ -131,50 +131,46 @@ export function compareTeams(
   return { order: 0, level: 'unresolved' }
 }
 
-/** Consecutive teams level on points and on general goal difference. */
-function levelRuns(sorted: readonly TeamRecord[]): TeamRecord[][] {
-  const runs: TeamRecord[][] = []
+/**
+ * Teams level on points, richest group first.
+ *
+ * Points are the first level, so every tie the cascade has to resolve lives
+ * inside one of these groups and nowhere else.
+ */
+function pointGroups(records: readonly TeamRecord[]): TeamRecord[][] {
+  const groups = new Map<number, TeamRecord[]>()
 
-  for (const record of sorted) {
-    const current = runs[runs.length - 1]
-    const head = current?.[0]
-
-    if (
-      current !== undefined &&
-      head !== undefined &&
-      head.points === record.points &&
-      head.goalDifference === record.goalDifference
-    ) {
-      current.push(record)
-    } else {
-      runs.push([record])
-    }
+  for (const record of records) {
+    groups.set(record.points, [...(groups.get(record.points) ?? []), record])
   }
 
-  return runs
+  return [...groups.entries()].sort(([left], [right]) => right - left).map(([, group]) => group)
 }
 
 /**
- * A run the app will not order.
+ * Whether an ordering of a tied group actually holds, pair by pair.
  *
- * Two teams go to arbitration only once all four levels are exhausted. Three or
- * more level on points and goal difference go there straight away: the rules
- * define the duel record between two teams, and three teams can beat each other
- * in a circle, so there is nothing to apply.
+ * The cascade compares two teams, and two teams it always separates or
+ * declares level. Over three it can contradict itself: each can win its duel
+ * against the next, and a circle has no first place in it. Sorting one anyway
+ * returns whichever order the comparisons happened to be made in, and then
+ * claims the duel record as the reason while putting a team that won three to
+ * one at the bottom. That is the one sentence this format cannot afford to get
+ * wrong, so the inconsistency is detected rather than papered over.
  */
-function isUndecided(run: readonly TeamRecord[], matches: readonly PlayedMatch[]): boolean {
-  if (run.length >= 3) {
-    return true
+function ordersConsistently(
+  ordered: readonly TeamRecord[],
+  matches: readonly PlayedMatch[],
+): boolean {
+  for (const [index, above] of ordered.entries()) {
+    for (const below of ordered.slice(index + 1)) {
+      if (compareTeams(above, below, matches).order >= 0) {
+        return false
+      }
+    }
   }
 
-  const [left, right] = run
-
-  return (
-    run.length === 2 &&
-    left !== undefined &&
-    right !== undefined &&
-    compareTeams(left, right, matches).level === 'unresolved'
-  )
+  return true
 }
 
 export function buildStandings(
@@ -184,34 +180,44 @@ export function buildStandings(
   const played = playedRoundRobin(matches)
   const records = teamIds.map((teamId) => buildRecord(teamId, played))
 
-  // The team id only breaks a tie the cascade already gave up on, so the table
-  // is stable between two reads rather than left to the sort implementation.
-  const sorted = [...records].sort(
-    (left, right) => compareTeams(left, right, played).order || left.teamId - right.teamId,
-  )
-
+  const sorted: TeamRecord[] = []
   const arbitration: number[][] = []
   const ranks = new Map<number, number>()
   const groupOf = new Map<number, number>()
 
   let position = 1
 
-  for (const run of levelRuns(sorted)) {
-    const undecided = isUndecided(run, played)
+  for (const group of pointGroups(records)) {
+    // The team id only breaks ties the cascade itself gave up on, so a table
+    // read twice reads the same rather than depending on the sort.
+    const ordered = [...group].sort(
+      (left, right) => compareTeams(left, right, played).order || left.teamId - right.teamId,
+    )
 
-    if (undecided) {
-      arbitration.push(run.map((record) => record.teamId))
-    }
+    // Nothing has happened yet is not a tie anyone has to arbitrate.
+    const decided =
+      group.every((record) => record.played === 0) || ordersConsistently(ordered, played)
 
-    for (const [offset, record] of run.entries()) {
-      ranks.set(record.teamId, undecided ? position : position + offset)
+    if (decided) {
+      for (const [offset, record] of ordered.entries()) {
+        ranks.set(record.teamId, position + offset)
+        sorted.push(record)
+      }
+    } else {
+      // The order inside the group carries no claim, so it is the one order
+      // that cannot be mistaken for a ranking.
+      const undecided = [...group].sort((left, right) => left.teamId - right.teamId)
 
-      if (undecided) {
+      arbitration.push(undecided.map((record) => record.teamId))
+
+      for (const record of undecided) {
+        ranks.set(record.teamId, position)
         groupOf.set(record.teamId, arbitration.length - 1)
+        sorted.push(record)
       }
     }
 
-    position += run.length
+    position += group.length
   }
 
   const rows = sorted.map((record, index) => {

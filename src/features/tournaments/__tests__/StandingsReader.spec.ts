@@ -79,6 +79,8 @@ describe('StandingsReader', () => {
     expect(view.rows).toHaveLength(3)
     expect(view.rows.every((row) => row.played === 0 && row.points === 0)).toBe(true)
     expect(view.configurations.every((row) => row.options.length === 0)).toBe(true)
+    // A fresh edition must not open by telling the organisers to arbitrate it.
+    expect(view.arbitration).toEqual([])
   })
 
   it('reflects a score the moment it is entered, with no network', async () => {
