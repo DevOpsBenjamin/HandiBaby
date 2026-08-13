@@ -21,7 +21,7 @@ const loaded = ref(false)
 
 const isDraft = computed(() => tournament.value?.status === 'draft')
 const isRoundRobin = computed(() => tournament.value?.status === 'round-robin')
-const isPlayoff = computed(() => tournament.value?.status === 'playoff')
+const isPlayoff = computed(() => ['playoff', 'finished'].includes(tournament.value?.status ?? ''))
 const remaining = computed(() => duels.value.filter((duel) => !duel.complete))
 const played = computed(() => duels.value.filter((duel) => duel.complete))
 
