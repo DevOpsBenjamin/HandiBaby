@@ -20,6 +20,7 @@ const progress = ref<ScheduleProgress | null>(null)
 const loaded = ref(false)
 
 const isDraft = computed(() => tournament.value?.status === 'draft')
+const isRoundRobin = computed(() => tournament.value?.status === 'round-robin')
 const remaining = computed(() => duels.value.filter((duel) => !duel.complete))
 const played = computed(() => duels.value.filter((duel) => duel.complete))
 
@@ -98,9 +99,15 @@ onMounted(async () => {
           <DuelList :public-id="publicId" :duels="played" :roster="roster" />
         </div>
 
-        <p v-if="progress && remaining.length === 0" class="text-emerald-300">
-          Tous les matchs de classement sont saisis.
-        </p>
+        <div v-if="progress && remaining.length === 0 && isRoundRobin" class="space-y-3">
+          <p class="text-emerald-300">Tous les matchs de classement sont saisis.</p>
+          <RouterLink
+            :to="{ name: 'validation', params: { publicId } }"
+            class="inline-block rounded-lg bg-ball px-4 py-2 font-semibold text-pitch-950"
+          >
+            Clôturer la phase de classement
+          </RouterLink>
+        </div>
       </template>
     </template>
   </section>

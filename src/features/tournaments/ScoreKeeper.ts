@@ -49,6 +49,18 @@ export class MatchNotEnteredError extends Error {
 }
 
 /**
+ * The group phase was closed, and the playoff is seeded from what it read.
+ * Editing a round-robin match now would invalidate matches already played, so
+ * it is refused here rather than reopened anywhere.
+ */
+export class GroupPhaseClosedError extends Error {
+  constructor() {
+    super('La phase de classement est validée : ce match n’est plus modifiable')
+    this.name = 'GroupPhaseClosedError'
+  }
+}
+
+/**
  * What a server needs to replay the write. Local row ids differ from one device
  * to the next, so the match is designated by where it sits in the calendar, the
  * winner by its side of the table, and the write itself by its journal line.
@@ -108,12 +120,20 @@ export class ScoreKeeper {
 
     const payload = await this.db.transaction(
       'rw',
-      [this.db.matches, this.db.journal],
+      [this.db.tournaments, this.db.matches, this.db.journal],
       async () => {
         const match = await this.db.matches.get(matchId)
 
         if (match === undefined || match.tournamentId !== tournament.id) {
           throw new UnknownMatchError()
+        }
+
+        // Read the status rather than trusting the caller's copy, which may
+        // predate a freeze that happened on another screen or another device.
+        const current = await this.db.tournaments.get(match.tournamentId)
+
+        if (match.phase === 'round-robin' && current?.status !== 'round-robin') {
+          throw new GroupPhaseClosedError()
         }
 
         const previous = readResult(match)

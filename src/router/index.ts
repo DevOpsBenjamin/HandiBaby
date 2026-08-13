@@ -44,6 +44,12 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/tournois/:publicId/validation',
+      name: 'validation',
+      component: () => import('@/features/tournaments/views/ValidationView.vue'),
+      props: true,
+    },
+    {
       path: '/tournois/:publicId/duels/:duel',
       name: 'duel',
       component: () => import('@/features/tournaments/views/DuelView.vue'),

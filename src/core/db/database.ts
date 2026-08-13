@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type { OutboxEntry, SyncCheckpoint } from './types'
 import type { Player } from '@/features/players/domain/types'
+import type { FrozenEdition } from '@/features/tournaments/domain/freeze'
 import type { JournalEntry } from '@/features/tournaments/domain/journal'
 import type { Match, Team, Tournament, TournamentPlayer } from '@/features/tournaments/domain/types'
 
@@ -20,6 +21,7 @@ export class HandiBabyDatabase extends Dexie {
   teams!: Table<Team, number>
   matches!: Table<Match, number>
   journal!: Table<JournalEntry, number>
+  frozenEditions!: Table<FrozenEdition, number>
 
   constructor(name = 'handibaby') {
     super(name)
@@ -52,6 +54,12 @@ export class HandiBabyDatabase extends Dexie {
     // the client-generated id is what makes replaying a queued write harmless.
     this.version(4).stores({
       journal: '++id, &entryId, matchId, tournamentId',
+    })
+
+    // What the group phase read when it was closed. One row per edition,
+    // written once, keyed on the edition so a second close cannot slip past.
+    this.version(5).stores({
+      frozenEditions: 'tournamentId',
     })
   }
 
