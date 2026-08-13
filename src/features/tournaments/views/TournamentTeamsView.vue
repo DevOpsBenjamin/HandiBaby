@@ -8,6 +8,7 @@ import { ParticipantRepository } from '../ParticipantRepository'
 import { TournamentSetup } from '../TournamentSetup'
 import { useTournamentsStore } from '../stores/tournaments'
 import { buildTeams, drawTeams, isSupportedPlayerCount } from '../domain/draw'
+import { MAXIMUM_TEAM_NAME_LENGTH } from '../domain/teamNames'
 import type { Tournament } from '../domain/types'
 
 const props = defineProps<{ publicId: string }>()
@@ -21,6 +22,8 @@ const tournament = ref<Tournament | null>(null)
 const roster = ref<Player[]>([])
 /** One slot per seat, two consecutive slots make a team. */
 const seats = ref<(number | null)[]>([])
+/** Optional nickname per team. Left empty, the numbered default is stored. */
+const names = ref<string[]>([])
 const error = ref<string | null>(null)
 const loaded = ref(false)
 const submitting = ref(false)
@@ -37,6 +40,7 @@ onMounted(async () => {
   const id = tournament.value?.id
   roster.value = id === undefined ? [] : await participants.list(id)
   seats.value = Array.from({ length: roster.value.length }, () => null)
+  names.value = Array.from({ length: roster.value.length / 2 }, () => '')
   loaded.value = true
 })
 
@@ -78,7 +82,12 @@ async function confirm(): Promise<void> {
       pairs.push([seats.value[index] ?? 0, seats.value[index + 1] ?? 0])
     }
 
-    await setup.start(id, buildTeams(pairs))
+    const compositions = buildTeams(pairs).map((composition, index) => ({
+      ...composition,
+      label: names.value[index] ?? '',
+    }))
+
+    await setup.start(id, compositions)
     await router.replace({ name: 'tournament', params: { publicId: props.publicId } })
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught)
@@ -138,6 +147,17 @@ async function confirm(): Promise<void> {
           class="space-y-3 rounded-xl border border-pitch-800 p-4"
         >
           <h3 class="font-medium">Équipe {{ team }}</h3>
+
+          <label class="block text-sm">
+            <span class="text-chalk-400">Nom (facultatif)</span>
+            <input
+              v-model="names[team - 1]"
+              type="text"
+              :maxlength="MAXIMUM_TEAM_NAME_LENGTH"
+              :placeholder="`Équipe ${team}`"
+              class="mt-1 w-full rounded-lg border border-pitch-700 bg-pitch-900 px-3 py-2 text-chalk-100 outline-none focus:border-ball"
+            />
+          </label>
 
           <label v-for="seat in 2" :key="seat" class="block text-sm">
             <span class="text-chalk-400">Joueur {{ seat }}</span>

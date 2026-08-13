@@ -4,6 +4,10 @@ import { RouterLink } from 'vue-router'
 import { db } from '@/core/container'
 import type { Player } from '@/features/players/domain/types'
 import DuelList from '../components/DuelList.vue'
+import UnlockPanel from '../components/UnlockPanel.vue'
+import { TeamRepository } from '../TeamRepository'
+import { MAXIMUM_TEAM_NAME_LENGTH } from '../domain/teamNames'
+import type { Team } from '../domain/types'
 import { ScheduleReader, type DuelSummary, type ScheduleProgress } from '../ScheduleReader'
 import { useTournamentsStore } from '../stores/tournaments'
 import type { Tournament } from '../domain/types'
@@ -11,6 +15,7 @@ import type { Tournament } from '../domain/types'
 const props = defineProps<{ publicId: string }>()
 
 const reader = new ScheduleReader(db)
+const teamRepository = new TeamRepository(db)
 const tournaments = useTournamentsStore()
 
 const tournament = ref<Tournament | null>(null)
@@ -18,6 +23,11 @@ const duels = ref<DuelSummary[]>([])
 const roster = ref<Player[]>([])
 const progress = ref<ScheduleProgress | null>(null)
 const loaded = ref(false)
+const teams = ref<Team[]>([])
+const renaming = ref(false)
+const unlocked = ref(false)
+const nameDrafts = ref<Record<number, string>>({})
+const nameError = ref<string | null>(null)
 
 const isDraft = computed(() => tournament.value?.status === 'draft')
 const isRoundRobin = computed(() => tournament.value?.status === 'round-robin')
@@ -27,9 +37,15 @@ const played = computed(() => duels.value.filter((duel) => duel.complete))
 
 onMounted(async () => {
   tournament.value = (await tournaments.find(props.publicId)) ?? null
+  unlocked.value = tournaments.isUnlocked(props.publicId)
 
   const id = tournament.value?.id
   if (id !== undefined && !isDraft.value) {
+    teams.value = await teamRepository.list(id)
+    for (const team of teams.value) {
+      nameDrafts.value[team.id ?? 0] = team.label
+    }
+
     ;[duels.value, roster.value, progress.value] = await Promise.all([
       reader.listDuels(id),
       reader.roster(id),
@@ -39,6 +55,30 @@ onMounted(async () => {
 
   loaded.value = true
 })
+
+/**
+ * Nicknames turn up several duels in, so renaming stays open for the whole life
+ * of an edition. Everything downstream keys on the team id, so this only
+ * changes what is printed, frozen group phase included.
+ */
+async function rename(teamId: number): Promise<void> {
+  const id = tournament.value?.id
+
+  if (id === undefined) {
+    return
+  }
+
+  nameError.value = null
+
+  try {
+    const stored = await teamRepository.rename(id, teamId, nameDrafts.value[teamId] ?? '')
+    nameDrafts.value[teamId] = stored
+    teams.value = await teamRepository.list(id)
+    duels.value = await reader.listDuels(id)
+  } catch (caught) {
+    nameError.value = caught instanceof Error ? caught.message : String(caught)
+  }
+}
 </script>
 
 <template>
@@ -99,6 +139,62 @@ onMounted(async () => {
             joueurs soient à la table en même temps.
           </p>
           <DuelList :public-id="publicId" :duels="remaining" :roster="roster" />
+        </div>
+
+        <div v-if="teams.length > 0" class="space-y-3">
+          <div class="flex flex-wrap items-baseline gap-3">
+            <h3 class="mr-auto text-sm font-medium tracking-wide text-chalk-400 uppercase">
+              Équipes
+            </h3>
+            <button
+              type="button"
+              class="text-sm text-chalk-400 hover:text-chalk-100"
+              @click="renaming = !renaming"
+            >
+              {{ renaming ? 'Terminer' : 'Renommer' }}
+            </button>
+          </div>
+
+          <UnlockPanel
+            v-if="renaming && !unlocked && tournament"
+            :tournament="tournament"
+            @unlocked="unlocked = true"
+          />
+
+          <p
+            v-if="nameError"
+            role="alert"
+            class="rounded-xl bg-rose-950/60 px-5 py-4 text-sm text-rose-200"
+          >
+            {{ nameError }}
+          </p>
+
+          <ul class="divide-y divide-pitch-800 overflow-hidden rounded-xl bg-pitch-900">
+            <li
+              v-for="team in teams"
+              :key="team.id"
+              class="flex flex-wrap items-center gap-3 px-5 py-3"
+            >
+              <template v-if="renaming && unlocked">
+                <input
+                  v-model="nameDrafts[team.id ?? 0]"
+                  type="text"
+                  :maxlength="MAXIMUM_TEAM_NAME_LENGTH"
+                  class="flex-1 rounded-lg border border-pitch-700 bg-pitch-900 px-3 py-1.5 text-sm text-chalk-100 outline-none focus:border-ball"
+                  @keyup.enter="rename(team.id ?? 0)"
+                />
+                <button
+                  type="button"
+                  class="rounded-lg border border-pitch-700 px-3 py-1.5 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
+                  @click="rename(team.id ?? 0)"
+                >
+                  Enregistrer
+                </button>
+              </template>
+
+              <span v-else class="font-medium">{{ team.label }}</span>
+            </li>
+          </ul>
         </div>
 
         <div v-if="played.length > 0" class="space-y-3">

@@ -1,3 +1,5 @@
+import { defaultTeamLabel } from './teamNames'
+
 /** Injected so tests can drive the draw deterministically. */
 export type Rng = () => number
 
@@ -11,10 +13,6 @@ export const SUPPORTED_PLAYER_COUNTS = [6, 8] as const
 
 export function isSupportedPlayerCount(count: number): boolean {
   return SUPPORTED_PLAYER_COUNTS.some((supported) => supported === count)
-}
-
-function defaultLabel(index: number): string {
-  return `Équipe ${index + 1}`
 }
 
 /**
@@ -39,7 +37,7 @@ function pair(playerIds: readonly number[]): TeamComposition[] {
       throw new Error('Players must come in pairs')
     }
 
-    teams.push({ label: defaultLabel(teams.length), players: [first, second] })
+    teams.push({ label: defaultTeamLabel(teams.length), players: [first, second] })
   }
 
   return teams
@@ -54,7 +52,7 @@ export function drawTeams(playerIds: readonly number[], rng: Rng = Math.random):
 /** Manual composition: the caller decides the pairs, this only checks them. */
 export function buildTeams(pairs: readonly (readonly [number, number])[]): TeamComposition[] {
   assertUsablePool(pairs.flat())
-  return pairs.map((players, index) => ({ label: defaultLabel(index), players }))
+  return pairs.map((players, index) => ({ label: defaultTeamLabel(index), players }))
 }
 
 function assertUsablePool(playerIds: readonly number[]): void {
