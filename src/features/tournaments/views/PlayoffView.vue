@@ -76,6 +76,30 @@ function sideTeam(round: PlayoffRound, side: TableSide): string {
   return teamLabel(side === 'blue' ? round.blueTeamId : round.whiteTeamId)
 }
 
+function configurationOf(teamId: number | null) {
+  return state.value?.frozen.configurations.find((row) => row.teamId === teamId) ?? null
+}
+
+/** Who actually stands where, which is the thing nobody should have to look up. */
+function sidePlayers(round: PlayoffRound, side: TableSide): string {
+  const configuration = configurationOf(side === 'blue' ? round.blueTeamId : round.whiteTeamId)
+
+  return configuration === null
+    ? '—'
+    : `${playerName(configuration.defenderId)} / ${playerName(configuration.attackerId)}`
+}
+
+/** Teams are feminine in French, so the first is "1re" and the others are "Ne". */
+function rankLabel(teamId: number | null): string {
+  const rank = state.value?.frozen.standings.find((row) => row.teamId === teamId)?.rank
+
+  if (rank === undefined) {
+    return ''
+  }
+
+  return rank === 1 ? '1re' : `${rank}e`
+}
+
 function outcome(round: PlayoffRound): string {
   if (round.result === null) {
     return ''
@@ -199,7 +223,12 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
             :key="configuration.teamId"
             class="flex flex-wrap items-baseline gap-x-3 px-5 py-3"
           >
-            <span class="mr-auto font-medium">{{ teamLabel(configuration.teamId) }}</span>
+            <span class="mr-auto font-medium">
+              {{ teamLabel(configuration.teamId) }}
+              <span class="text-sm font-normal text-chalk-400">
+                ({{ rankLabel(configuration.teamId) }})
+              </span>
+            </span>
             <span class="text-sm text-chalk-400">
               {{ playerName(configuration.defenderId) }} en défense,
               {{ playerName(configuration.attackerId) }} en attaque
@@ -250,7 +279,11 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
                 "
               >
                 <p class="text-xs tracking-wide text-sky-300 uppercase">{{ SIDE_LABELS.blue }}</p>
-                <p class="mt-1 font-medium">{{ sideTeam(round, 'blue') }}</p>
+                <p class="mt-1 font-medium">{{ sidePlayers(round, 'blue') }}</p>
+                <p class="text-xs text-chalk-400">
+                  {{ sideTeam(round, 'blue') }} ({{ rankLabel(round.blueTeamId) }}), défense /
+                  attaque
+                </p>
               </div>
 
               <div
@@ -264,7 +297,11 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
                 <p class="text-xs tracking-wide text-chalk-400 uppercase">
                   {{ SIDE_LABELS.white }}
                 </p>
-                <p class="mt-1 font-medium">{{ sideTeam(round, 'white') }}</p>
+                <p class="mt-1 font-medium">{{ sidePlayers(round, 'white') }}</p>
+                <p class="text-xs text-chalk-400">
+                  {{ sideTeam(round, 'white') }} ({{ rankLabel(round.whiteTeamId) }}), défense /
+                  attaque
+                </p>
               </div>
             </div>
 
@@ -273,7 +310,9 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
               class="mt-3 flex flex-wrap items-center gap-2 text-sm"
             >
               <span class="text-chalk-400">
-                {{ teamLabel(round.choosesEnd) }} choisit son bout de table :
+                {{ teamLabel(round.choosesEnd) }} est la mieux classée ({{
+                  rankLabel(round.choosesEnd)
+                }}) et choisit son bout de table :
               </span>
               <button
                 v-for="side in ['blue', 'white'] as TableSide[]"
