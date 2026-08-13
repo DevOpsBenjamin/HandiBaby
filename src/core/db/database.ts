@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type { OutboxEntry, SyncCheckpoint } from './types'
 import type { Player } from '@/features/players/domain/types'
+import type { JournalEntry } from '@/features/tournaments/domain/journal'
 import type { Match, Team, Tournament, TournamentPlayer } from '@/features/tournaments/domain/types'
 
 /**
@@ -18,6 +19,7 @@ export class HandiBabyDatabase extends Dexie {
   tournamentPlayers!: Table<TournamentPlayer, number>
   teams!: Table<Team, number>
   matches!: Table<Match, number>
+  journal!: Table<JournalEntry, number>
 
   constructor(name = 'handibaby') {
     super(name)
@@ -43,6 +45,13 @@ export class HandiBabyDatabase extends Dexie {
     // declaration is history: a schema change gets a new version, never an edit.
     this.version(3).stores({
       tournaments: '++id, &publicId, status, createdAt',
+    })
+
+    // History of what was written to a match. Append-only, so it is its own
+    // table rather than columns on the match it describes. The unique index on
+    // the client-generated id is what makes replaying a queued write harmless.
+    this.version(4).stores({
+      journal: '++id, &entryId, matchId, tournamentId',
     })
   }
 
