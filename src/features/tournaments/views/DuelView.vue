@@ -4,10 +4,12 @@ import { RouterLink } from 'vue-router'
 import { db, syncEngine } from '@/core/container'
 import { displayName } from '@/features/players/domain/naming'
 import type { Player } from '@/features/players/domain/types'
+import MatchHistory from '../components/MatchHistory.vue'
 import MatchScoreEntry from '../components/MatchScoreEntry.vue'
 import UnlockPanel from '../components/UnlockPanel.vue'
+import { JournalReader, type JournalRecord } from '../JournalReader'
 import { ScheduleReader, type DuelDetail, type MatchSide } from '../ScheduleReader'
-import { ScoreEntry } from '../ScoreEntry'
+import { ScoreKeeper } from '../ScoreKeeper'
 import { useTournamentsStore } from '../stores/tournaments'
 import { WINNING_SCORE, type MatchResult } from '../domain/score'
 import type { Tournament } from '../domain/types'
@@ -15,17 +17,21 @@ import type { Tournament } from '../domain/types'
 const props = defineProps<{ publicId: string; duel: string }>()
 
 const reader = new ScheduleReader(db)
-const entry = new ScoreEntry(db, syncEngine)
+const journal = new JournalReader(db)
+const scores = new ScoreKeeper(db, syncEngine)
 const tournaments = useTournamentsStore()
 
 const tournament = ref<Tournament | null>(null)
 const detail = ref<DuelDetail | null>(null)
+const history = ref<Map<number, JournalRecord[]>>(new Map())
 const roster = ref<Player[]>([])
 const loaded = ref(false)
 const unlocked = ref(false)
 const error = ref<string | null>(null)
 /** Id of the match being written, so only its own pad greys out. */
 const saving = ref<number | null>(null)
+/** Id of the match whose result is being replaced, if any. */
+const correcting = ref<number | null>(null)
 
 const title = computed(() =>
   detail.value === null
@@ -40,30 +46,50 @@ onMounted(async () => {
   const id = tournament.value?.id
   if (id !== undefined) {
     roster.value = await reader.roster(id)
-    detail.value = await reader.readDuel(id, Number(props.duel))
+    await refresh(id)
   }
 
   loaded.value = true
 })
 
-async function record(matchId: number, result: MatchResult): Promise<void> {
+async function refresh(tournamentId: number): Promise<void> {
+  detail.value = await reader.readDuel(tournamentId, Number(props.duel))
+  history.value = await journal.forMatches((detail.value?.matches ?? []).map((match) => match.id))
+}
+
+async function write(matchId: number, result: MatchResult): Promise<void> {
   const edition = tournament.value
 
   if (edition === null || edition.id === undefined) {
     return
   }
 
+  const replacing = correcting.value === matchId
   error.value = null
   saving.value = matchId
 
   try {
-    await entry.record(edition, matchId, result)
+    await (replacing
+      ? scores.correct(edition, matchId, result)
+      : scores.record(edition, matchId, result))
+    correcting.value = null
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught)
   } finally {
     saving.value = null
     // Re-read either way: a refusal means the stored result is not what was displayed.
-    detail.value = await reader.readDuel(edition.id, Number(props.duel))
+    await refresh(edition.id)
+  }
+}
+
+function currentResult(match: DuelDetail['matches'][number]): MatchResult | null {
+  if (match.winnerTeamId === null || match.loserScore === null) {
+    return null
+  }
+
+  return {
+    winningSide: match.winnerTeamId === match.blue.teamId ? 'blue' : 'white',
+    loserScore: match.loserScore,
   }
 }
 
@@ -147,16 +173,32 @@ function outcome(match: DuelDetail['matches'][number]): string {
         </div>
 
         <MatchScoreEntry
-          v-if="unlocked && !match.played"
+          v-if="unlocked && (!match.played || correcting === match.id)"
           :busy="saving === match.id"
-          @submit="record(match.id, $event)"
+          :current="correcting === match.id ? currentResult(match) : null"
+          @submit="write(match.id, $event)"
+          @cancel="correcting = null"
+        />
+
+        <button
+          v-else-if="unlocked && match.played"
+          type="button"
+          class="mt-3 rounded-lg border border-pitch-700 px-3 py-1.5 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
+          @click="correcting = match.id"
+        >
+          Corriger
+        </button>
+
+        <MatchHistory
+          v-if="(history.get(match.id) ?? []).length > 0"
+          :records="history.get(match.id) ?? []"
         />
       </li>
     </ol>
 
     <p class="text-sm text-chalk-400">
-      Un score déjà saisi ne peut pas encore être repris : la correction arrive dans la prochaine
-      livraison.
+      Un score reste corrigeable tant que la phase de classement n’a pas été validée. Chaque saisie
+      et chaque correction laissent une trace dans l’historique du match.
     </p>
   </section>
 </template>
