@@ -1,7 +1,21 @@
 <script setup lang="ts">
+import { onScopeDispose } from 'vue'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
+import { scheduleUpdateChecks } from '@/core/pwa/updateChecks'
 
-const { needRefresh, offlineReady, updateServiceWorker } = useRegisterSW()
+let stopUpdateChecks: (() => void) | null = null
+
+const { needRefresh, offlineReady, updateServiceWorker } = useRegisterSW({
+  // workbox-window only looks for a new worker as it registers. Without this a
+  // tab left open in a Teams channel runs the build from the day it was opened.
+  onRegisteredSW(_swUrl, registration) {
+    if (registration !== undefined) {
+      stopUpdateChecks = scheduleUpdateChecks(registration)
+    }
+  },
+})
+
+onScopeDispose(() => stopUpdateChecks?.())
 
 function dismiss(): void {
   needRefresh.value = false
