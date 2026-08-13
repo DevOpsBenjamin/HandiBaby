@@ -10,6 +10,22 @@ const router = createRouter({
       component: HomeView,
     },
     {
+      path: '/tournois',
+      name: 'tournament-list',
+      component: () => import('@/features/tournaments/views/TournamentListView.vue'),
+    },
+    {
+      path: '/tournois/nouveau',
+      name: 'tournament-create',
+      component: () => import('@/features/tournaments/views/TournamentCreateView.vue'),
+    },
+    {
+      path: '/tournois/:publicId',
+      name: 'tournament',
+      component: () => import('@/features/tournaments/views/TournamentView.vue'),
+      props: true,
+    },
+    {
       path: '/joueurs',
       name: 'player-pool',
       component: () => import('@/features/players/views/PlayerPoolView.vue'),

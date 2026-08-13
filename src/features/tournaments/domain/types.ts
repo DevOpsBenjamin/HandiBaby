@@ -7,10 +7,28 @@ export type TournamentStatus =
 
 export interface Tournament {
   id?: number
+  /**
+   * Generated on the device that creates the edition. The local row id differs
+   * from one device to the next, so anything shared between devices, starting
+   * with the link and the unlock, keys on this instead.
+   */
+  publicId: string
   label: string
   startDate: string
   status: TournamentStatus
+  /**
+   * bcrypt verifier for the passphrase guarding this edition's writes. Travels
+   * with the tournament so it can be checked with no network; the server
+   * re-verifies every write regardless.
+   */
+  passphraseHash: string
   createdAt: number
+}
+
+const IN_PROGRESS: readonly TournamentStatus[] = ['draft', 'round-robin', 'playoff']
+
+export function isInProgress(status: TournamentStatus): boolean {
+  return IN_PROGRESS.includes(status)
 }
 
 /** A player taking part in one edition, before teams are composed. */

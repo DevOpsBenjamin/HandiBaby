@@ -37,6 +37,13 @@ export class HandiBabyDatabase extends Dexie {
       teams: '++id, tournamentId',
       matches: '++id, tournamentId, phase, [tournamentId+duel]',
     })
+
+    // An edition is now identified across devices by a generated public id, so
+    // it needs its own unique index. Version 2 is already deployed and its
+    // declaration is history: a schema change gets a new version, never an edit.
+    this.version(3).stores({
+      tournaments: '++id, &publicId, status, createdAt',
+    })
   }
 
   /** Wipes local state. Used by tests and by a future "reset this device" action. */
