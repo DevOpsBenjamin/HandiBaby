@@ -34,5 +34,12 @@ export interface FrozenEdition {
   standings: FrozenStanding[]
   configurations: FrozenConfiguration[]
   bracket: BracketPairing[]
+  /**
+   * The groups the cascade could not separate, in the order the organisers
+   * settled on. Stored next to the standings rather than folded into them: the
+   * standings stay a derivation of the matches and stay honest about not
+   * separating these teams, and this is the human fact recorded beside it.
+   */
+  arbitration?: number[][]
   frozenAt: number
 }

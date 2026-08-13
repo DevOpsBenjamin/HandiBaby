@@ -1,4 +1,5 @@
 import type { HandiBabyDatabase } from '@/core/db/database'
+import { applyArbitration } from './domain/arbitration'
 import { buildBracket } from './domain/bracket'
 import { bestConfiguration, type ConfigurationChoice } from './domain/configurations'
 import type { FrozenConfiguration, FrozenEdition, FrozenStanding } from './domain/freeze'
@@ -21,10 +22,11 @@ export class MatchesStillOpenError extends Error {
 
 /**
  * Raised rather than seeding a bracket on an order the rules did not produce.
- * The organisers settle it, which is exactly what the cascade asked for.
+ * The organisers settle it on the validation screen, which is exactly what the
+ * cascade asked for.
  */
 export class ArbitrationPendingError extends Error {
-  constructor() {
+  constructor(readonly groups: readonly (readonly number[])[]) {
     super('Des équipes ne sont pas départagées : le classement doit être arbitré avant de figer')
     this.name = 'ArbitrationPendingError'
   }
@@ -43,6 +45,8 @@ export interface ClosingPreview {
   remaining: number
   /** Teams whose two configurations are level, and which therefore have to pick. */
   awaitingChoice: number[]
+  /** Groups the cascade could not order, which the organisers have to settle. */
+  awaitingArbitration: number[][]
   closable: boolean
 }
 
@@ -82,11 +86,16 @@ export class GroupPhase {
       configurations,
       remaining,
       awaitingChoice,
+      awaitingArbitration: standings.arbitration,
       closable: remaining === 0 && standings.arbitration.length === 0,
     }
   }
 
-  async close(tournament: Tournament, choices: ConfigurationChoices = {}): Promise<FrozenEdition> {
+  async close(
+    tournament: Tournament,
+    choices: ConfigurationChoices = {},
+    arbitration: readonly (readonly number[])[] = [],
+  ): Promise<FrozenEdition> {
     const tournamentId = tournament.id ?? 0
 
     return this.db.transaction(
@@ -117,15 +126,22 @@ export class GroupPhase {
         const teamIds = teams.map((team) => team.id ?? 0)
         const table = buildStandings(teamIds, matches)
 
-        if (table.arbitration.length > 0) {
-          throw new ArbitrationPendingError()
+        // The rules stopped here, so a human has to say what the order is. The
+        // refusal stands until they have; it just has somewhere to go now.
+        if (table.arbitration.length > 0 && arbitration.length === 0) {
+          throw new ArbitrationPendingError(table.arbitration)
         }
+
+        const ordered =
+          table.arbitration.length === 0
+            ? table.rows
+            : applyArbitration(table.rows, table.arbitration, arbitration)
 
         const configurations = this.#resolveConfigurations(teamIds, matches, choices)
 
         const frozen: FrozenEdition = {
           tournamentId,
-          standings: table.rows.map((row): FrozenStanding => ({
+          standings: ordered.map((row): FrozenStanding => ({
             rank: row.rank,
             teamId: row.teamId,
             played: row.played,
@@ -139,6 +155,7 @@ export class GroupPhase {
           })),
           configurations,
           bracket: buildBracket(teamIds.length),
+          arbitration: arbitration.map((group) => [...group]),
           frozenAt: Date.now(),
         }
 
