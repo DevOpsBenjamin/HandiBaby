@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { db, syncEngine } from '@/core/container'
+import { displayName } from '@/features/players/domain/naming'
 import type { Player } from '@/features/players/domain/types'
 import MatchRow from '../components/MatchRow.vue'
 import UnlockPanel from '../components/UnlockPanel.vue'
@@ -91,6 +92,14 @@ async function write(matchId: number, result: MatchResult): Promise<void> {
     // Re-read either way: a refusal means the stored result is not what was displayed.
     await refresh(edition.id)
   }
+}
+
+/** A team is recognised by who is in it, never by the name being replaced. */
+function playersOf(team: Team): string {
+  return [team.playerOneId, team.playerTwoId]
+    .map((playerId) => roster.value.find((player) => (player.id ?? 0) === playerId))
+    .map((player) => (player === undefined ? '—' : displayName(player, roster.value)))
+    .join(' et ')
 }
 
 async function rename(teamId: number): Promise<void> {
@@ -196,26 +205,31 @@ async function rename(teamId: number): Promise<void> {
             <li
               v-for="team in teams"
               :key="team.id"
-              class="flex flex-wrap items-center gap-3 px-5 py-3"
+              class="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3"
             >
-              <template v-if="renaming && unlocked">
+              <div class="min-w-48 flex-1">
                 <input
+                  v-if="renaming && unlocked"
                   v-model="nameDrafts[team.id ?? 0]"
                   type="text"
                   :maxlength="MAXIMUM_TEAM_NAME_LENGTH"
-                  class="flex-1 rounded-lg border border-pitch-700 bg-pitch-900 px-3 py-1.5 text-sm text-chalk-100 outline-none focus:border-ball"
+                  :placeholder="team.label"
+                  class="w-full rounded-lg border border-pitch-700 bg-pitch-900 px-3 py-1.5 text-sm text-chalk-100 outline-none focus:border-ball"
                   @keyup.enter="rename(team.id ?? 0)"
                 />
-                <button
-                  type="button"
-                  class="rounded-lg border border-pitch-700 px-3 py-1.5 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
-                  @click="rename(team.id ?? 0)"
-                >
-                  Enregistrer
-                </button>
-              </template>
+                <span v-else class="font-medium">{{ team.label }}</span>
 
-              <span v-else class="font-medium">{{ team.label }}</span>
+                <p class="mt-1 text-xs text-chalk-400">{{ playersOf(team) }}</p>
+              </div>
+
+              <button
+                v-if="renaming && unlocked"
+                type="button"
+                class="rounded-lg border border-pitch-700 px-3 py-1.5 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
+                @click="rename(team.id ?? 0)"
+              >
+                Enregistrer
+              </button>
             </li>
           </ul>
         </div>
