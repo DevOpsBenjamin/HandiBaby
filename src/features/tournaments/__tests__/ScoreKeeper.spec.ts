@@ -68,7 +68,7 @@ async function started() {
   })
 
   const reader = new ScheduleReader(db)
-  const detail = await reader.readDuel(tournamentId, 1)
+  const roundRobin = await reader.listMatches(tournamentId)
 
   return {
     db,
@@ -78,7 +78,7 @@ async function started() {
     tournamentId,
     journal: new JournalReader(db),
     keeper: new ScoreKeeper(db, engine),
-    matches: detail?.matches ?? [],
+    matches: roundRobin,
   }
 }
 
@@ -94,9 +94,7 @@ describe('ScoreKeeper', () => {
 
     await keeper.record(tournament, first?.id ?? 0, { winningSide: 'white', loserScore: 7 })
 
-    const played = (await reader.readDuel(tournamentId, 1))?.matches.find(
-      (match) => match.id === first?.id,
-    )
+    const played = (await reader.listMatches(tournamentId)).find((match) => match.id === first?.id)
 
     expect(played?.played).toBe(true)
     expect(played?.winnerTeamId).toBe(first?.white.teamId)
@@ -190,8 +188,8 @@ describe('ScoreKeeper', () => {
 
     await keeper.record(tournament, second?.id ?? 0, { winningSide: 'blue', loserScore: 5 })
 
-    const detail = await reader.readDuel(tournamentId, 1)
-    expect(detail?.matches.filter((match) => match.played)).toHaveLength(2)
+    const roundRobin = await reader.listMatches(tournamentId)
+    expect(roundRobin.filter((match) => match.played)).toHaveLength(2)
   })
 
   it('replaces a result it is asked to correct', async () => {
@@ -202,9 +200,7 @@ describe('ScoreKeeper', () => {
     await keeper.record(tournament, matchId, { winningSide: 'blue', loserScore: 3 })
     await keeper.correct(tournament, matchId, { winningSide: 'white', loserScore: 8 })
 
-    const played = (await reader.readDuel(tournamentId, 1))?.matches.find(
-      (match) => match.id === matchId,
-    )
+    const played = (await reader.listMatches(tournamentId)).find((match) => match.id === matchId)
 
     expect(played?.winnerTeamId).toBe(first?.white.teamId)
     expect(played?.loserScore).toBe(8)

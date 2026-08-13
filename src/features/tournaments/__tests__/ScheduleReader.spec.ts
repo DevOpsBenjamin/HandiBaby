@@ -44,15 +44,6 @@ async function started(count: number) {
   return { db, reader: new ScheduleReader(db), tournamentId }
 }
 
-/** Marks every match of a duel as won by whoever was on blue. */
-async function playDuel(db: HandiBabyDatabase, tournamentId: number, duel: number): Promise<void> {
-  const matches = await db.matches.where('tournamentId').equals(tournamentId).toArray()
-
-  for (const match of matches.filter((candidate) => candidate.duel === duel)) {
-    await db.matches.update(match.id ?? 0, { winnerTeamId: match.blueTeamId, loserScore: 3 })
-  }
-}
-
 afterEach(async () => {
   await open?.delete()
   open = null
@@ -60,89 +51,95 @@ afterEach(async () => {
 
 describe('ScheduleReader', () => {
   it.each([
-    { players: 6, duels: 3, matches: 12 },
-    { players: 8, duels: 6, matches: 24 },
-  ])('lists $duels duels for $players players', async (expected) => {
+    { players: 6, matches: 12 },
+    { players: 8, matches: 24 },
+  ])('lists $matches round-robin matches for $players players', async (expected) => {
     const { reader, tournamentId } = await started(expected.players)
 
-    const duels = await reader.listDuels(tournamentId)
+    const matches = await reader.listMatches(tournamentId)
 
-    expect(duels).toHaveLength(expected.duels)
-    expect(duels.map((duel) => duel.duel)).toEqual(
-      Array.from({ length: expected.duels }, (_, index) => index + 1),
-    )
-    expect(duels.every((duel) => duel.totalMatches === 4)).toBe(true)
-    expect(duels.reduce((total, duel) => total + duel.totalMatches, 0)).toBe(expected.matches)
+    expect(matches).toHaveLength(expected.matches)
+    expect(matches.every((match) => match.blue.teamId !== match.white.teamId)).toBe(true)
   })
 
-  it('names the two teams of a duel by their players', async () => {
-    const { reader, tournamentId } = await started(6)
-
-    const [first] = await reader.listDuels(tournamentId)
-
-    expect(first?.teams).toHaveLength(2)
-    expect(first?.teams.every((team) => team.players.length === 2)).toBe(true)
-    expect(first?.teams.flatMap((team) => team.players.map((player) => player.firstName))).toEqual([
-      'Prenom0',
-      'Prenom1',
-      'Prenom2',
-      'Prenom3',
-    ])
-  })
-
-  it('counts a duel as played only once its four matches are in', async () => {
+  it('reads the calendar in one stored order, identical on every device', async () => {
     const { db, reader, tournamentId } = await started(6)
 
-    expect((await reader.progress(tournamentId)).playedDuels).toBe(0)
+    const first = await reader.listMatches(tournamentId)
+    // A second reader over the same rows, insertion order deliberately ignored.
+    const second = await new ScheduleReader(db).listMatches(tournamentId)
 
-    const matches = await db.matches.where('tournamentId').equals(tournamentId).toArray()
-    const partial = matches.filter((match) => match.duel === 1).slice(0, 3)
-    for (const match of partial) {
-      await db.matches.update(match.id ?? 0, { winnerTeamId: match.blueTeamId, loserScore: 5 })
-    }
-
-    const midway = await reader.progress(tournamentId)
-    expect(midway.playedDuels).toBe(0)
-    expect(midway.playedMatches).toBe(3)
-
-    await playDuel(db, tournamentId, 1)
-
-    const after = await reader.progress(tournamentId)
-    expect(after.playedDuels).toBe(1)
-    expect(after.totalDuels).toBe(3)
+    expect(second.map((match) => match.id)).toEqual(first.map((match) => match.id))
+    expect(first.map((match) => match.order)).toEqual(
+      Array.from({ length: first.length }, (_, index) => index),
+    )
   })
 
-  it('reads a duel with its four matches in order, positions and sides resolved', async () => {
+  it('never puts two matches of the same duel back to back', async () => {
+    for (const players of [6, 8]) {
+      const { reader, tournamentId } = await started(players)
+      const matches = await reader.listMatches(tournamentId)
+
+      for (let index = 1; index < matches.length; index += 1) {
+        expect(matches[index]?.duel).not.toBe(matches[index - 1]?.duel)
+      }
+
+      await open?.delete()
+      open = null
+    }
+  })
+
+  it('keeps the duel on every row, because the tie-break still reads it', async () => {
     const { reader, tournamentId } = await started(6)
 
-    const detail = await reader.readDuel(tournamentId, 1)
+    const matches = await reader.listMatches(tournamentId)
+    const byDuel = new Map<number, number>()
 
-    expect(detail?.matches.map((match) => match.rankInDuel)).toEqual([1, 2, 3, 4])
+    for (const match of matches) {
+      byDuel.set(match.duel, (byDuel.get(match.duel) ?? 0) + 1)
+    }
 
-    for (const match of detail?.matches ?? []) {
+    expect(byDuel.size).toBe(3)
+    expect([...byDuel.values()].every((count) => count === 4)).toBe(true)
+  })
+
+  it('resolves both sides with their positions and their table end', async () => {
+    const { reader, tournamentId } = await started(6)
+
+    for (const match of await reader.listMatches(tournamentId)) {
       expect(match.blue.defender).not.toBeNull()
       expect(match.blue.attacker).not.toBeNull()
       expect(match.white.defender).not.toBeNull()
       expect(match.white.attacker).not.toBeNull()
-      expect(match.blue.teamId).not.toBe(match.white.teamId)
+      expect(match.blue.teamLabel).not.toBe('')
       expect(match.played).toBe(false)
     }
   })
 
-  it('reports a played match with its result', async () => {
+  it('counts progress in matches, not in duels', async () => {
     const { db, reader, tournamentId } = await started(6)
-    await playDuel(db, tournamentId, 1)
 
-    const detail = await reader.readDuel(tournamentId, 1)
+    expect(await reader.progress(tournamentId)).toEqual({ playedMatches: 0, totalMatches: 12 })
 
-    expect(detail?.matches.every((match) => match.played)).toBe(true)
-    expect(detail?.matches.every((match) => match.loserScore === 3)).toBe(true)
+    const [first, second] = await db.matches.where('tournamentId').equals(tournamentId).toArray()
+    for (const match of [first, second]) {
+      await db.matches.update(match?.id ?? 0, { winnerTeamId: match?.blueTeamId, loserScore: 3 })
+    }
+
+    expect(await reader.progress(tournamentId)).toEqual({ playedMatches: 2, totalMatches: 12 })
   })
 
-  it('returns nothing for a duel that does not exist', async () => {
-    const { reader, tournamentId } = await started(6)
+  it('reports a played match with its result', async () => {
+    const { db, reader, tournamentId } = await started(6)
+    const [first] = await db.matches.where('tournamentId').equals(tournamentId).toArray()
 
-    expect(await reader.readDuel(tournamentId, 99)).toBeNull()
+    await db.matches.update(first?.id ?? 0, { winnerTeamId: first?.blueTeamId, loserScore: 3 })
+
+    const played = (await reader.listMatches(tournamentId)).find((match) => match.id === first?.id)
+
+    expect(played?.played).toBe(true)
+    expect(played?.loserScore).toBe(3)
+    expect(played?.winnerTeamId).toBe(first?.blueTeamId)
   })
 
   it('reads an edition that has not started as empty rather than failing', async () => {
@@ -150,7 +147,7 @@ describe('ScheduleReader', () => {
     const tournament = await new TournamentRepository(open).createDraft(EDITION)
     const reader = new ScheduleReader(open)
 
-    expect(await reader.listDuels(tournament.id ?? 0)).toHaveLength(0)
-    expect((await reader.progress(tournament.id ?? 0)).totalDuels).toBe(0)
+    expect(await reader.listMatches(tournament.id ?? 0)).toHaveLength(0)
+    expect((await reader.progress(tournament.id ?? 0)).totalMatches).toBe(0)
   })
 })

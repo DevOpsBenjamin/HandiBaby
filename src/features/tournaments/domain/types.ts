@@ -62,7 +62,18 @@ export interface Match {
   id?: number
   tournamentId: number
   phase: MatchPhase
-  /** Groups the four matches of one duel. Null outside the round robin. */
+  /**
+   * Where the match sits in the reading order of the calendar, generated with
+   * it. Insertion order stops being a promise once rows travel through a
+   * server, so the position is a value of its own. Absent on editions created
+   * before it existed, which fall back to their duel grouping.
+   */
+  order?: number
+  /**
+   * Groups the four matches of one duel. Null outside the round robin. Kept
+   * populated even though duels are no longer a screen: level 2 of the
+   * tie-break cascade reads the four matches between two teams.
+   */
   duel: number | null
   /** 1 to 4 inside a duel. Null outside the round robin. */
   rankInDuel: number | null

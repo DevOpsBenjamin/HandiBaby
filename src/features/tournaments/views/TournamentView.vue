@@ -1,39 +1,47 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { db } from '@/core/container'
+import { db, syncEngine } from '@/core/container'
 import type { Player } from '@/features/players/domain/types'
-import DuelList from '../components/DuelList.vue'
+import MatchRow from '../components/MatchRow.vue'
 import UnlockPanel from '../components/UnlockPanel.vue'
+import { JournalReader, type JournalRecord } from '../JournalReader'
+import { ScheduleReader, type MatchView, type ScheduleProgress } from '../ScheduleReader'
+import { ScoreKeeper } from '../ScoreKeeper'
 import { TeamRepository } from '../TeamRepository'
-import { MAXIMUM_TEAM_NAME_LENGTH } from '../domain/teamNames'
-import type { Team } from '../domain/types'
-import { ScheduleReader, type DuelSummary, type ScheduleProgress } from '../ScheduleReader'
 import { useTournamentsStore } from '../stores/tournaments'
-import type { Tournament } from '../domain/types'
+import type { MatchResult } from '../domain/score'
+import { MAXIMUM_TEAM_NAME_LENGTH } from '../domain/teamNames'
+import type { Team, Tournament } from '../domain/types'
 
 const props = defineProps<{ publicId: string }>()
 
 const reader = new ScheduleReader(db)
+const journal = new JournalReader(db)
+const scores = new ScoreKeeper(db, syncEngine)
 const teamRepository = new TeamRepository(db)
 const tournaments = useTournamentsStore()
 
 const tournament = ref<Tournament | null>(null)
-const duels = ref<DuelSummary[]>([])
+const matches = ref<MatchView[]>([])
+const history = ref<Map<number, JournalRecord[]>>(new Map())
 const roster = ref<Player[]>([])
 const progress = ref<ScheduleProgress | null>(null)
-const loaded = ref(false)
 const teams = ref<Team[]>([])
-const renaming = ref(false)
+const loaded = ref(false)
 const unlocked = ref(false)
+const error = ref<string | null>(null)
+const saving = ref<number | null>(null)
+const correcting = ref<number | null>(null)
+const renaming = ref(false)
 const nameDrafts = ref<Record<number, string>>({})
 const nameError = ref<string | null>(null)
 
 const isDraft = computed(() => tournament.value?.status === 'draft')
 const isRoundRobin = computed(() => tournament.value?.status === 'round-robin')
 const isPlayoff = computed(() => ['playoff', 'finished'].includes(tournament.value?.status ?? ''))
-const remaining = computed(() => duels.value.filter((duel) => !duel.complete))
-const played = computed(() => duels.value.filter((duel) => duel.complete))
+
+const remaining = computed(() => matches.value.filter((match) => !match.played))
 
 onMounted(async () => {
   tournament.value = (await tournaments.find(props.publicId)) ?? null
@@ -41,26 +49,50 @@ onMounted(async () => {
 
   const id = tournament.value?.id
   if (id !== undefined && !isDraft.value) {
+    roster.value = await reader.roster(id)
     teams.value = await teamRepository.list(id)
+
     for (const team of teams.value) {
       nameDrafts.value[team.id ?? 0] = team.label
     }
 
-    ;[duels.value, roster.value, progress.value] = await Promise.all([
-      reader.listDuels(id),
-      reader.roster(id),
-      reader.progress(id),
-    ])
+    await refresh(id)
   }
 
   loaded.value = true
 })
 
-/**
- * Nicknames turn up several duels in, so renaming stays open for the whole life
- * of an edition. Everything downstream keys on the team id, so this only
- * changes what is printed, frozen group phase included.
- */
+async function refresh(tournamentId: number): Promise<void> {
+  matches.value = await reader.listMatches(tournamentId)
+  progress.value = await reader.progress(tournamentId)
+  history.value = await journal.forMatches(matches.value.map((match) => match.id))
+}
+
+async function write(matchId: number, result: MatchResult): Promise<void> {
+  const edition = tournament.value
+
+  if (edition === null || edition.id === undefined) {
+    return
+  }
+
+  const replacing = correcting.value === matchId
+  error.value = null
+  saving.value = matchId
+
+  try {
+    await (replacing
+      ? scores.correct(edition, matchId, result)
+      : scores.record(edition, matchId, result))
+    correcting.value = null
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    saving.value = null
+    // Re-read either way: a refusal means the stored result is not what was displayed.
+    await refresh(edition.id)
+  }
+}
+
 async function rename(teamId: number): Promise<void> {
   const id = tournament.value?.id
 
@@ -74,7 +106,7 @@ async function rename(teamId: number): Promise<void> {
     const stored = await teamRepository.rename(id, teamId, nameDrafts.value[teamId] ?? '')
     nameDrafts.value[teamId] = stored
     teams.value = await teamRepository.list(id)
-    duels.value = await reader.listDuels(id)
+    await refresh(id)
   } catch (caught) {
     nameError.value = caught instanceof Error ? caught.message : String(caught)
   }
@@ -100,8 +132,8 @@ async function rename(teamId: number): Promise<void> {
         <p class="mt-1 text-chalk-400">
           Débutée le {{ tournament.startDate }}
           <template v-if="progress">
-            · {{ progress.playedDuels }} duel{{ progress.playedDuels > 1 ? 's' : '' }} sur
-            {{ progress.totalDuels }} joué{{ progress.playedDuels > 1 ? 's' : '' }}
+            · {{ progress.playedMatches }} match{{ progress.playedMatches > 1 ? 's' : '' }} sur
+            {{ progress.totalMatches }} joué{{ progress.playedMatches > 1 ? 's' : '' }}
           </template>
         </p>
       </div>
@@ -115,30 +147,21 @@ async function rename(teamId: number): Promise<void> {
       </RouterLink>
 
       <template v-else>
-        <RouterLink
-          v-if="isPlayoff"
-          :to="{ name: 'playoff', params: { publicId } }"
-          class="mr-2 inline-block rounded-lg bg-ball px-4 py-2 font-semibold text-pitch-950"
-        >
-          Playoff
-        </RouterLink>
+        <div class="flex flex-wrap gap-2">
+          <RouterLink
+            v-if="isPlayoff"
+            :to="{ name: 'playoff', params: { publicId } }"
+            class="inline-block rounded-lg bg-ball px-4 py-2 font-semibold text-pitch-950"
+          >
+            Playoff
+          </RouterLink>
 
-        <RouterLink
-          :to="{ name: 'standings', params: { publicId } }"
-          class="inline-block rounded-lg border border-pitch-700 px-4 py-2 text-sm hover:border-ball"
-        >
-          Classement et configurations
-        </RouterLink>
-
-        <div v-if="remaining.length > 0" class="space-y-3">
-          <h3 class="text-sm font-medium tracking-wide text-chalk-400 uppercase">
-            À jouer ({{ remaining.length }})
-          </h3>
-          <p class="text-sm text-chalk-400">
-            Un duel se joue d’un bloc, ses quatre matchs à la suite. Il faut donc que ses quatre
-            joueurs soient à la table en même temps.
-          </p>
-          <DuelList :public-id="publicId" :duels="remaining" :roster="roster" />
+          <RouterLink
+            :to="{ name: 'standings', params: { publicId } }"
+            class="inline-block rounded-lg border border-pitch-700 px-4 py-2 text-sm hover:border-ball"
+          >
+            Classement et configurations
+          </RouterLink>
         </div>
 
         <div v-if="teams.length > 0" class="space-y-3">
@@ -156,7 +179,7 @@ async function rename(teamId: number): Promise<void> {
           </div>
 
           <UnlockPanel
-            v-if="renaming && !unlocked && tournament"
+            v-if="renaming && !unlocked"
             :tournament="tournament"
             @unlocked="unlocked = true"
           />
@@ -197,12 +220,46 @@ async function rename(teamId: number): Promise<void> {
           </ul>
         </div>
 
-        <div v-if="played.length > 0" class="space-y-3">
+        <div v-if="isRoundRobin" class="space-y-3">
           <h3 class="text-sm font-medium tracking-wide text-chalk-400 uppercase">
-            Joués ({{ played.length }})
+            Matchs de classement
           </h3>
-          <DuelList :public-id="publicId" :duels="played" :roster="roster" />
+          <p class="text-sm text-chalk-400">
+            Jouez-les dans l’ordre qui vous arrange : ceux qui sont à la table prennent le prochain
+            match qui leur va. Les postes et les côtés sont déjà décidés, le vainqueur est toujours
+            à dix.
+          </p>
+
+          <UnlockPanel
+            v-if="!unlocked && !renaming"
+            :tournament="tournament"
+            @unlocked="unlocked = true"
+          />
+
+          <p
+            v-if="error"
+            role="alert"
+            class="rounded-xl bg-rose-950/60 px-5 py-4 text-sm text-rose-200"
+          >
+            {{ error }}
+          </p>
         </div>
+
+        <ol v-if="matches.length > 0" class="space-y-3">
+          <MatchRow
+            v-for="match in matches"
+            :key="match.id"
+            :match="match"
+            :roster="roster"
+            :unlocked="unlocked && isRoundRobin"
+            :busy="saving === match.id"
+            :correcting="correcting === match.id"
+            :records="history.get(match.id) ?? []"
+            @submit="write(match.id, $event)"
+            @correct="correcting = match.id"
+            @cancel="correcting = null"
+          />
+        </ol>
 
         <div v-if="progress && remaining.length === 0 && isRoundRobin" class="space-y-3">
           <p class="text-emerald-300">Tous les matchs de classement sont saisis.</p>
