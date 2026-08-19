@@ -6,6 +6,7 @@ import { SyncEngine } from './sync/engine'
 import { SyncRegistry } from './sync/registry'
 
 import { ScoreSyncAdapter } from '@/features/tournaments/sync/ScoreSyncAdapter'
+import { TournamentSyncAdapter } from '@/features/tournaments/sync/TournamentSyncAdapter'
 
 /**
  * Composition root. Everything below is instantiated once and imported by the
@@ -16,6 +17,7 @@ export const db = new HandiBabyDatabase()
 export const gateway = new SupabaseGateway(readSupabaseConfig(import.meta.env))
 
 export const registry = new SyncRegistry()
+registry.register(new TournamentSyncAdapter())
 registry.register(new ScoreSyncAdapter())
 
 export const connectivity = new ConnectivityMonitor()

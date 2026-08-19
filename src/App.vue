@@ -1,7 +1,26 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
+import { syncEngine } from '@/core/container'
+import { useTournamentsStore } from '@/features/tournaments/stores/tournaments'
 import PwaUpdatePrompt from '@/components/PwaUpdatePrompt.vue'
 import SyncStatusBadge from '@/components/SyncStatusBadge.vue'
+
+const tournaments = useTournamentsStore()
+
+let unsubscribe: (() => void) | null = null
+
+onMounted(() => {
+  unsubscribe = syncEngine.subscribe((snapshot) => {
+    if (snapshot.phase === 'idle') {
+      void tournaments.load()
+    }
+  })
+})
+
+onUnmounted(() => {
+  unsubscribe?.()
+})
 </script>
 
 <template>
