@@ -23,8 +23,11 @@ function name(player: Player | null): string {
   return player === null ? '—' : displayName(player, props.roster)
 }
 
-function sideName(side: MatchSide): string {
-  return `${name(side.defender)} / ${name(side.attacker)}`
+function sidePlayers(side: MatchSide): string {
+  if (side.defender === null && side.attacker === null) {
+    return '—'
+  }
+  return `${name(side.defender)} (défense) / ${name(side.attacker)} (attaque)`
 }
 
 function outcome(): string {
@@ -74,15 +77,15 @@ function currentResult(): MatchResult | null {
 
     <div class="mt-3 grid gap-3 sm:grid-cols-2">
       <div class="rounded-lg border px-4 py-3" :class="sideClass('blue')">
-        <p class="text-xs tracking-wide text-sky-300 uppercase">Bleu</p>
-        <p class="mt-1 font-medium">{{ sideName(match.blue) }}</p>
-        <p class="text-xs text-chalk-400">{{ match.blue.teamLabel }}, défense / attaque</p>
+        <p class="font-medium">{{ match.blue.teamLabel }}</p>
+        <p class="mt-1 text-sm text-chalk-200">{{ sidePlayers(match.blue) }}</p>
+        <p class="mt-2 text-xs tracking-wide text-sky-300 uppercase">Bleu</p>
       </div>
 
       <div class="rounded-lg border px-4 py-3" :class="sideClass('white')">
-        <p class="text-xs tracking-wide text-chalk-400 uppercase">Blanc</p>
-        <p class="mt-1 font-medium">{{ sideName(match.white) }}</p>
-        <p class="text-xs text-chalk-400">{{ match.white.teamLabel }}, défense / attaque</p>
+        <p class="font-medium">{{ match.white.teamLabel }}</p>
+        <p class="mt-1 text-sm text-chalk-200">{{ sidePlayers(match.white) }}</p>
+        <p class="mt-2 text-xs tracking-wide text-chalk-400 uppercase">Blanc</p>
       </div>
     </div>
 
