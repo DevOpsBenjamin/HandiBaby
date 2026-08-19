@@ -38,6 +38,13 @@ onMounted(async () => {
 function signed(difference: number): string {
   return difference > 0 ? `+${difference}` : String(difference)
 }
+
+function rateColor(rate: number | null): string {
+  if (rate === null) return 'text-chalk-400'
+  if (rate >= 60) return 'text-emerald-300'
+  if (rate <= 40) return 'text-rose-300'
+  return 'text-chalk-100'
+}
 </script>
 
 <template>
@@ -155,6 +162,132 @@ function signed(difference: number): string {
             concernée.
           </p>
         </div>
+      </div>
+    </div>
+
+    <!-- Équilibre de la table / Winrate par côté -->
+    <div class="space-y-3">
+      <h3 class="text-sm font-medium tracking-wide text-chalk-400 uppercase">
+        Équilibre de la table (Bilan par côté)
+      </h3>
+      <p class="text-sm text-chalk-400">
+        Taux de victoires selon le côté de jeu (Bleu vs Blanc), au global et par équipe, pour
+        mesurer l’équité du baby-foot (éclairage, barres, inclinaison).
+      </p>
+
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div class="rounded-xl border border-sky-500/30 bg-sky-950/20 px-5 py-4">
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs font-medium tracking-wide text-sky-300 uppercase">Côté Bleu</span>
+            <span class="text-lg font-semibold text-chalk-100">
+              {{
+                view.sideStats.overall.blueWinRate !== null
+                  ? `${view.sideStats.overall.blueWinRate}%`
+                  : '—'
+              }}
+            </span>
+          </div>
+          <p class="mt-2 text-sm text-chalk-300">
+            {{ view.sideStats.overall.blueWins }} victoire{{
+              view.sideStats.overall.blueWins > 1 ? 's' : ''
+            }}
+            sur {{ view.sideStats.overall.played }} match{{
+              view.sideStats.overall.played > 1 ? 's' : ''
+            }}
+          </p>
+          <p class="mt-1 text-xs text-chalk-400">
+            {{ view.sideStats.overall.blueGoals }} buts marqués
+          </p>
+        </div>
+
+        <div class="rounded-xl border border-pitch-700 bg-pitch-900 px-5 py-4">
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs font-medium tracking-wide text-chalk-400 uppercase">
+              Côté Blanc
+            </span>
+            <span class="text-lg font-semibold text-chalk-100">
+              {{
+                view.sideStats.overall.whiteWinRate !== null
+                  ? `${view.sideStats.overall.whiteWinRate}%`
+                  : '—'
+              }}
+            </span>
+          </div>
+          <p class="mt-2 text-sm text-chalk-300">
+            {{ view.sideStats.overall.whiteWins }} victoire{{
+              view.sideStats.overall.whiteWins > 1 ? 's' : ''
+            }}
+            sur {{ view.sideStats.overall.played }} match{{
+              view.sideStats.overall.played > 1 ? 's' : ''
+            }}
+          </p>
+          <p class="mt-1 text-xs text-chalk-400">
+            {{ view.sideStats.overall.whiteGoals }} buts marqués
+          </p>
+        </div>
+      </div>
+
+      <div v-if="view.sideStats.overall.played > 0" class="space-y-1">
+        <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-pitch-800">
+          <div
+            class="bg-sky-500 transition-all duration-300"
+            :style="{ width: `${view.sideStats.overall.blueWinRate ?? 50}%` }"
+          ></div>
+          <div
+            class="bg-chalk-300 transition-all duration-300"
+            :style="{ width: `${view.sideStats.overall.whiteWinRate ?? 50}%` }"
+          ></div>
+        </div>
+        <div class="flex justify-between text-xs text-chalk-400">
+          <span>Bleu : {{ view.sideStats.overall.blueWinRate }}%</span>
+          <span>Blanc : {{ view.sideStats.overall.whiteWinRate }}%</span>
+        </div>
+      </div>
+
+      <div
+        v-if="view.sideStats.teams.length > 0 && view.sideStats.overall.played > 0"
+        class="overflow-x-auto rounded-xl bg-pitch-900"
+      >
+        <table class="w-full text-sm">
+          <thead class="text-chalk-400">
+            <tr class="border-b border-pitch-800">
+              <th class="px-4 py-3 text-left font-medium">Équipe</th>
+              <th class="px-4 py-3 text-right font-medium">Bleu (V/J)</th>
+              <th class="px-4 py-3 text-right font-medium">% Bleu</th>
+              <th class="px-4 py-3 text-right font-medium">Diff. Bleu</th>
+              <th class="px-4 py-3 text-right font-medium">Blanc (V/J)</th>
+              <th class="px-4 py-3 text-right font-medium">% Blanc</th>
+              <th class="px-4 py-3 text-right font-medium">Diff. Blanc</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="stat in view.sideStats.teams"
+              :key="stat.teamId"
+              class="border-b border-pitch-800/60 last:border-0"
+            >
+              <td class="px-4 py-3 font-medium">{{ stat.teamLabel }}</td>
+              <td class="px-4 py-3 text-right text-chalk-400">
+                {{ stat.blue.wins }} / {{ stat.blue.played }}
+              </td>
+              <td class="px-4 py-3 text-right font-medium" :class="rateColor(stat.blue.winRate)">
+                {{ stat.blue.winRate !== null ? `${stat.blue.winRate}%` : '—' }}
+              </td>
+              <td class="px-4 py-3 text-right text-chalk-400">
+                {{ signed(stat.blue.goalDifference) }}
+              </td>
+              <td class="px-4 py-3 text-right text-chalk-400">
+                {{ stat.white.wins }} / {{ stat.white.played }}
+              </td>
+              <td class="px-4 py-3 text-right font-medium" :class="rateColor(stat.white.winRate)">
+                {{ stat.white.winRate !== null ? `${stat.white.winRate}%` : '—' }}
+              </td>
+              <td class="px-4 py-3 text-right text-chalk-400">
+                {{ signed(stat.white.goalDifference) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </section>

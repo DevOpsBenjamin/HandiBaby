@@ -2,6 +2,7 @@ import type { HandiBabyDatabase } from '@/core/db/database'
 import { displayName } from '@/features/players/domain/naming'
 import type { Player } from '@/features/players/domain/types'
 import { bestConfiguration, type Configuration } from './domain/configurations'
+import { computeSideStats, type OverallSideStats, type SideRecord } from './domain/sideStats'
 import { buildStandings, type Standing } from './domain/standings'
 
 export interface StandingRow extends Standing {
@@ -21,11 +22,22 @@ export interface ConfigurationRow {
   tied: boolean
 }
 
+export interface TeamSideStatRow {
+  teamId: number
+  teamLabel: string
+  blue: SideRecord
+  white: SideRecord
+}
+
 export interface StandingsView {
   rows: StandingRow[]
   configurations: ConfigurationRow[]
   /** Teams the cascade refused to order, named for the message that says so. */
   arbitration: string[][]
+  sideStats: {
+    overall: OverallSideStats
+    teams: TeamSideStatRow[]
+  }
 }
 
 /**
@@ -53,6 +65,7 @@ export class StandingsReader {
     }
 
     const table = buildStandings(teamIds, matches)
+    const sideStats = computeSideStats(teamIds, matches)
 
     return {
       rows: table.rows.map((row) => {
@@ -84,6 +97,14 @@ export class StandingsReader {
       arbitration: table.arbitration.map((group) =>
         group.map((teamId) => labels.get(teamId) ?? ''),
       ),
+
+      sideStats: {
+        overall: sideStats.overall,
+        teams: sideStats.teams.map((stat) => ({
+          ...stat,
+          teamLabel: labels.get(stat.teamId) ?? '',
+        })),
+      },
     }
   }
 
