@@ -15,9 +15,15 @@ const props = defineProps<{
   busy: boolean
   correcting: boolean
   records: readonly JournalRecord[]
+  swapMessage?: string | null
 }>()
 
-const emit = defineEmits<{ submit: [MatchResult]; correct: []; cancel: [] }>()
+const emit = defineEmits<{
+  submit: [MatchResult]
+  correct: []
+  cancel: []
+  swapSides: []
+}>()
 
 function name(player: Player | null): string {
   return player === null ? '—' : displayName(player, props.roster)
@@ -89,10 +95,31 @@ function currentResult(): MatchResult | null {
       </div>
     </div>
 
+    <div
+      v-if="unlocked && (!match.played || correcting)"
+      class="mt-2 flex flex-wrap items-center justify-between gap-2"
+    >
+      <p v-if="swapMessage" class="text-xs text-amber-300">
+        {{ swapMessage }}
+      </p>
+      <span v-else></span>
+
+      <button
+        type="button"
+        class="flex items-center gap-1.5 rounded py-1 px-2 text-xs text-chalk-400 hover:bg-pitch-800 hover:text-chalk-100"
+        :disabled="busy"
+        @click="emit('swapSides')"
+      >
+        <span aria-hidden="true">⇄</span> Inverser les côtés (mauvaise couleur)
+      </button>
+    </div>
+
     <MatchScoreEntry
       v-if="unlocked && (!match.played || correcting)"
       :busy="busy"
       :current="correcting ? currentResult() : null"
+      :blue-team-label="match.blue.teamLabel"
+      :white-team-label="match.white.teamLabel"
       @submit="emit('submit', $event)"
       @cancel="emit('cancel')"
     />

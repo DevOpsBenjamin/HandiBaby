@@ -62,4 +62,48 @@ describe('MatchRow', () => {
     expect(text).not.toContain('Les Aigles, défense / attaque')
     expect(text).not.toContain('Les Faucons, défense / attaque')
   })
+
+  it('renders team names in score entry buttons and emits swapSides when button clicked', async () => {
+    const match = makeMatch()
+    const wrapper = mount(MatchRow, {
+      props: {
+        match,
+        roster: ROSTER,
+        unlocked: true,
+        busy: false,
+        correcting: false,
+        records: [],
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Les Aigles gagne')
+    expect(text).toContain('Les Faucons gagne')
+
+    const swapBtn = wrapper.find('button[type="button"]')
+    expect(swapBtn.exists()).toBe(true)
+    const allButtons = wrapper.findAll('button')
+    const swapButton = allButtons.find((b) => b.text().includes('Inverser les côtés'))
+    expect(swapButton).toBeDefined()
+    await swapButton?.trigger('click')
+
+    expect(wrapper.emitted('swapSides')).toHaveLength(1)
+  })
+
+  it('displays swapMessage if provided', () => {
+    const match = makeMatch()
+    const wrapper = mount(MatchRow, {
+      props: {
+        match,
+        roster: ROSTER,
+        unlocked: true,
+        busy: false,
+        correcting: false,
+        records: [],
+        swapMessage: 'Côtés inversés. Le match 3 a été ajusté.',
+      },
+    })
+
+    expect(wrapper.text()).toContain('Côtés inversés. Le match 3 a été ajusté.')
+  })
 })
