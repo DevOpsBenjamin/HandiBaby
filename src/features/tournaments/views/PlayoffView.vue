@@ -346,6 +346,8 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
               v-if="unlocked && isPlayoff && (!round.result || correcting === round.phase)"
               :busy="saving === round.phase"
               :current="correcting === round.phase ? round.result : null"
+              :blue-team-label="sideTeam(round, 'blue')"
+              :white-team-label="sideTeam(round, 'white')"
               @submit="enter(round.phase, $event)"
               @cancel="correcting = null"
             />

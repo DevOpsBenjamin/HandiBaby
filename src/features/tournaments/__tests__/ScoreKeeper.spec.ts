@@ -313,4 +313,40 @@ describe('ScoreKeeper', () => {
     })
     expect(engine.snapshot.pendingOperations).toBe(2)
   })
+
+  it('inverts the table sides of a match and automatically balances another unplayed match in the same duel', async () => {
+    const { db, keeper, tournament, matches } = await started()
+    // Find duel 1 matches
+    const duelOne = matches.filter((m) => m.duel === 1)
+    expect(duelOne.length).toBe(4)
+
+    const first = duelOne[0]
+    const second = duelOne[1]
+    const third = duelOne[2]
+    const fourth = duelOne[3]
+
+    // Play first match normally
+    await keeper.record(tournament, first?.id ?? 0, { winningSide: 'blue', loserScore: 5 })
+
+    // Invert second match
+    const result = await keeper.invertSides(tournament, second?.id ?? 0)
+
+    const updatedSecond = await db.matches.get(second?.id ?? 0)
+    expect(updatedSecond?.blueTeamId).toBe(second?.white.teamId)
+    expect(updatedSecond?.whiteTeamId).toBe(second?.blue.teamId)
+    expect(updatedSecond?.blueDefenderId).toBe(second?.white.defender?.id)
+    expect(updatedSecond?.blueAttackerId).toBe(second?.white.attacker?.id)
+
+    // Check balancing match (first was already played, so third is selected)
+    expect(result.balancedMatchId).toBe(third?.id)
+    const updatedThird = await db.matches.get(third?.id ?? 0)
+    expect(updatedThird?.blueTeamId).toBe(third?.white.teamId)
+    expect(updatedThird?.whiteTeamId).toBe(third?.blue.teamId)
+
+    // First and fourth matches remain as they were
+    const updatedFirst = await db.matches.get(first?.id ?? 0)
+    expect(updatedFirst?.blueTeamId).toBe(first?.blue.teamId)
+    const updatedFourth = await db.matches.get(fourth?.id ?? 0)
+    expect(updatedFourth?.blueTeamId).toBe(fourth?.blue.teamId)
+  })
 })

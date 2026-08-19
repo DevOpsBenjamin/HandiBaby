@@ -1,14 +1,33 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { LOSER_SCORES, WINNING_SCORE, type MatchResult } from '../domain/score'
 import { SIDE_LABELS, type TableSide } from '../domain/types'
 
 /** `current` is set when correcting: what is about to be replaced, shown first. */
-defineProps<{ busy: boolean; current?: MatchResult | null }>()
+const props = defineProps<{
+  busy: boolean
+  current?: MatchResult | null
+  blueTeamLabel?: string
+  whiteTeamLabel?: string
+}>()
 const emit = defineEmits<{ submit: [MatchResult]; cancel: [] }>()
 
 /** Held between the two taps: the winning side, then where the loser stopped. */
 const winningSide = ref<TableSide | null>(null)
+
+function teamLabelOf(side: TableSide): string {
+  if (side === 'blue') {
+    return props.blueTeamLabel || SIDE_LABELS.blue
+  }
+  return props.whiteTeamLabel || SIDE_LABELS.white
+}
+
+const winningTeamLabel = computed(() => {
+  if (winningSide.value === null) {
+    return ''
+  }
+  return teamLabelOf(winningSide.value)
+})
 
 function choose(side: TableSide): void {
   winningSide.value = side
@@ -31,7 +50,7 @@ function submit(loserScore: number): void {
     <p v-if="current" class="mb-2 text-xs text-chalk-400">
       Résultat actuel :
       <span class="text-chalk-100">
-        {{ SIDE_LABELS[current.winningSide] }} {{ WINNING_SCORE }} – {{ current.loserScore }}
+        {{ teamLabelOf(current.winningSide) }} {{ WINNING_SCORE }} – {{ current.loserScore }}
       </span>
     </p>
 
@@ -47,7 +66,7 @@ function submit(loserScore: number): void {
           :disabled="busy"
           @click="choose('blue')"
         >
-          {{ SIDE_LABELS.blue }} gagne
+          {{ teamLabelOf('blue') }} gagne
         </button>
         <button
           type="button"
@@ -55,7 +74,7 @@ function submit(loserScore: number): void {
           :disabled="busy"
           @click="choose('white')"
         >
-          {{ SIDE_LABELS.white }} gagne
+          {{ teamLabelOf('white') }} gagne
         </button>
 
         <button
@@ -72,7 +91,7 @@ function submit(loserScore: number): void {
 
     <template v-else>
       <p class="text-xs tracking-wide text-chalk-400 uppercase">
-        {{ SIDE_LABELS[winningSide] }} gagne {{ WINNING_SCORE }} à combien ?
+        {{ winningTeamLabel }} gagne {{ WINNING_SCORE }} à combien ?
       </p>
 
       <div class="mt-2 flex flex-wrap items-center gap-2">

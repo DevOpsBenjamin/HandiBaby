@@ -41,6 +41,7 @@ const nameDrafts = ref<Record<number, string>>({})
 const nameError = ref<string | null>(null)
 const abandoning = ref(false)
 const abandonError = ref<string | null>(null)
+const swapMessage = ref<{ matchId: number; text: string } | null>(null)
 
 const isDraft = computed(() => tournament.value?.status === 'draft')
 const isRoundRobin = computed(() => tournament.value?.status === 'round-robin')
@@ -113,6 +114,38 @@ async function write(matchId: number, result: MatchResult): Promise<void> {
     saving.value = null
     // Re-read either way: a refusal means the stored result is not what was displayed.
     await refresh(edition.id)
+  }
+}
+
+async function swapSides(matchId: number): Promise<void> {
+  const edition = tournament.value
+
+  if (edition === null || edition.id === undefined) {
+    return
+  }
+
+  error.value = null
+  saving.value = matchId
+  swapMessage.value = null
+
+  try {
+    const { balancedMatchOrder } = await scores.invertSides(edition, matchId)
+    if (balancedMatchOrder !== null) {
+      swapMessage.value = {
+        matchId,
+        text: `Côtés inversés. Le match ${balancedMatchOrder} a été ajusté pour équilibrer le duel.`,
+      }
+    } else {
+      swapMessage.value = {
+        matchId,
+        text: 'Côtés inversés pour ce match.',
+      }
+    }
+    await refresh(edition.id)
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    saving.value = null
   }
 }
 
@@ -316,9 +349,11 @@ async function rename(teamId: number): Promise<void> {
             :busy="saving === match.id"
             :correcting="correcting === match.id"
             :records="history.get(match.id) ?? []"
+            :swap-message="swapMessage?.matchId === match.id ? swapMessage.text : null"
             @submit="write(match.id, $event)"
             @correct="correcting = match.id"
             @cancel="correcting = null"
+            @swap-sides="swapSides(match.id)"
           />
         </ol>
 

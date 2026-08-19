@@ -189,4 +189,74 @@ export class ScoreKeeper {
       payload,
     })
   }
+
+  /**
+   * Inverts table sides (blue/white) for a round-robin match, and automatically
+   * balances the duel by inverting a corresponding unplayed match in the same duel.
+   */
+  async invertSides(
+    tournament: Tournament,
+    matchId: number,
+  ): Promise<{ balancedMatchId: number | null; balancedMatchOrder: number | null }> {
+    return await this.db.transaction('rw', [this.db.tournaments, this.db.matches], async () => {
+      const match = await this.db.matches.get(matchId)
+
+      if (match === undefined || match.tournamentId !== tournament.id) {
+        throw new UnknownMatchError()
+      }
+
+      const current = await this.db.tournaments.get(match.tournamentId)
+
+      if (match.phase !== 'round-robin' || current?.status !== 'round-robin') {
+        throw new GroupPhaseClosedError()
+      }
+
+      const oldBlueTeamId = match.blueTeamId
+      const oldWhiteTeamId = match.whiteTeamId
+      const oldBlueDefenderId = match.blueDefenderId
+      const oldBlueAttackerId = match.blueAttackerId
+      const oldWhiteDefenderId = match.whiteDefenderId
+      const oldWhiteAttackerId = match.whiteAttackerId
+
+      await this.db.matches.update(matchId, {
+        blueTeamId: oldWhiteTeamId,
+        whiteTeamId: oldBlueTeamId,
+        blueDefenderId: oldWhiteDefenderId,
+        blueAttackerId: oldWhiteAttackerId,
+        whiteDefenderId: oldBlueDefenderId,
+        whiteAttackerId: oldBlueAttackerId,
+      })
+
+      let balancedMatchId: number | null = null
+      let balancedMatchOrder: number | null = null
+
+      if (match.duel !== null && tournament.id !== undefined) {
+        const duelMatches = await this.db.matches
+          .where('tournamentId')
+          .equals(tournament.id)
+          .filter((m) => m.phase === 'round-robin' && m.duel === match.duel && m.id !== matchId)
+          .toArray()
+
+        const unplayedCandidate = duelMatches.find(
+          (m) => m.winnerTeamId === null && m.blueTeamId === oldWhiteTeamId,
+        )
+
+        if (unplayedCandidate !== undefined && unplayedCandidate.id !== undefined) {
+          balancedMatchId = unplayedCandidate.id
+          balancedMatchOrder = (unplayedCandidate.order ?? 0) + 1
+
+          await this.db.matches.update(unplayedCandidate.id, {
+            blueTeamId: unplayedCandidate.whiteTeamId,
+            whiteTeamId: unplayedCandidate.blueTeamId,
+            blueDefenderId: unplayedCandidate.whiteDefenderId,
+            blueAttackerId: unplayedCandidate.whiteAttackerId,
+            whiteDefenderId: unplayedCandidate.blueDefenderId,
+            whiteAttackerId: unplayedCandidate.blueAttackerId,
+          })
+        }
+      }
+
+      return { balancedMatchId, balancedMatchOrder }
+    })
+  }
 }
