@@ -144,4 +144,26 @@ describe('StandingsReader', () => {
     expect(played.every((row) => row.options.every((option) => option.played === 2))).toBe(true)
     expect(played.every((row) => row.options.every((option) => option.defender !== '—'))).toBe(true)
   })
+
+  it('computes table side statistics overall and per team', async () => {
+    const { keeper, schedule, standings, tournament, tournamentId } = await started()
+    const roundRobin = await schedule.listMatches(tournamentId)
+
+    const first = roundRobin[0]
+    await keeper.record(tournament, first?.id ?? 0, { winningSide: 'blue', loserScore: 3 })
+
+    const view = await standings.read(tournamentId)
+
+    expect(view.sideStats.overall.played).toBe(1)
+    expect(view.sideStats.overall.blueWins).toBe(1)
+    expect(view.sideStats.overall.whiteWins).toBe(0)
+    expect(view.sideStats.overall.blueWinRate).toBe(100.0)
+    expect(view.sideStats.overall.whiteWinRate).toBe(0.0)
+
+    const blueTeamStat = view.sideStats.teams.find((t) => t.teamId === first?.blue.teamId)
+    expect(blueTeamStat?.blue.played).toBe(1)
+    expect(blueTeamStat?.blue.wins).toBe(1)
+    expect(blueTeamStat?.blue.winRate).toBe(100.0)
+    expect(blueTeamStat?.teamLabel).not.toBe('')
+  })
 })
