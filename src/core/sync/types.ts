@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { HandiBabyDatabase } from '../db/database'
 import type { OutboxEntry } from '../db/types'
+import type { Database } from '../supabase/database'
 
 export type SyncPhase =
   /** No Supabase configured: the app runs on IndexedDB alone. */
@@ -21,7 +22,7 @@ export interface SyncSnapshot {
 }
 
 export interface SyncContext {
-  readonly client: SupabaseClient
+  readonly client: SupabaseClient<Database, 'app_handibaby'>
   readonly db: HandiBabyDatabase
   /** Cursor returned by this adapter's previous pull, or null on a cold start. */
   readonly cursor: string | null
