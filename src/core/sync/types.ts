@@ -21,7 +21,7 @@ export interface SyncSnapshot {
 }
 
 export interface SyncContext {
-  readonly client: SupabaseClient
+  readonly client: SupabaseClient<any, 'app_handibaby'>
   readonly db: HandiBabyDatabase
   /** Cursor returned by this adapter's previous pull, or null on a cold start. */
   readonly cursor: string | null
