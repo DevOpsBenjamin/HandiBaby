@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { db, syncEngine } from '@/core/container'
 import { displayName } from '@/features/players/domain/naming'
@@ -51,7 +51,7 @@ const isInProgress = computed(() =>
   ['draft', 'round-robin', 'playoff'].includes(tournament.value?.status ?? ''),
 )
 
-onMounted(async () => {
+async function loadTournamentData(): Promise<void> {
   tournament.value = (await tournaments.find(props.publicId)) ?? null
   unlocked.value = tournaments.isUnlocked(props.publicId)
 
@@ -68,6 +68,21 @@ onMounted(async () => {
   }
 
   loaded.value = true
+}
+
+let unsubscribe: (() => void) | null = null
+
+onMounted(async () => {
+  await loadTournamentData()
+  unsubscribe = syncEngine.subscribe((snapshot) => {
+    if (snapshot.phase === 'idle') {
+      void loadTournamentData()
+    }
+  })
+})
+
+onUnmounted(() => {
+  unsubscribe?.()
 })
 
 async function refresh(tournamentId: number): Promise<void> {
