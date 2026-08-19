@@ -5,6 +5,8 @@ import { SupabaseGateway } from './supabase/gateway'
 import { SyncEngine } from './sync/engine'
 import { SyncRegistry } from './sync/registry'
 
+import { ScoreSyncAdapter } from '@/features/tournaments/sync/ScoreSyncAdapter'
+
 /**
  * Composition root. Everything below is instantiated once and imported by the
  * Pinia stores, never by components directly.
@@ -14,6 +16,7 @@ export const db = new HandiBabyDatabase()
 export const gateway = new SupabaseGateway(readSupabaseConfig(import.meta.env))
 
 export const registry = new SyncRegistry()
+registry.register(new ScoreSyncAdapter())
 
 export const connectivity = new ConnectivityMonitor()
 

@@ -14,13 +14,316 @@ export type Database = {
   }
   app_handibaby: {
     Tables: {
-      [_ in never]: never
+      frozen_editions: {
+        Row: {
+          data: Json
+          frozen_at: number
+          tournament_public_id: string
+        }
+        Insert: {
+          data: Json
+          frozen_at: number
+          tournament_public_id: string
+        }
+        Update: {
+          data?: Json
+          frozen_at?: number
+          tournament_public_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "frozen_editions_tournament_public_id_fkey"
+            columns: ["tournament_public_id"]
+            isOneToOne: true
+            referencedRelation: "tournaments"
+            referencedColumns: ["public_id"]
+          },
+        ]
+      }
+      matches: {
+        Row: {
+          duel: number | null
+          entered_at: number | null
+          id: number
+          loser_score: number | null
+          phase: string
+          rank_in_duel: number | null
+          tournament_public_id: string
+          winning_side: string | null
+        }
+        Insert: {
+          duel?: number | null
+          entered_at?: number | null
+          id?: never
+          loser_score?: number | null
+          phase: string
+          rank_in_duel?: number | null
+          tournament_public_id: string
+          winning_side?: string | null
+        }
+        Update: {
+          duel?: number | null
+          entered_at?: number | null
+          id?: never
+          loser_score?: number | null
+          phase?: string
+          rank_in_duel?: number | null
+          tournament_public_id?: string
+          winning_side?: string | null
+        }
+        Relationships: []
+      }
+      players: {
+        Row: {
+          created_at: string
+          first_name: string
+          id: number
+          last_name: string
+          name_key: string
+        }
+        Insert: {
+          created_at?: string
+          first_name: string
+          id?: never
+          last_name: string
+          name_key: string
+        }
+        Update: {
+          created_at?: string
+          first_name?: string
+          id?: never
+          last_name?: string
+          name_key?: string
+        }
+        Relationships: []
+      }
+      scores_journal: {
+        Row: {
+          created_at: string
+          duel: number | null
+          entry_id: string
+          loser_score: number
+          operation: string
+          phase: string
+          previous: Json | null
+          rank_in_duel: number | null
+          tournament_public_id: string
+          winning_side: string
+          written_at: number
+        }
+        Insert: {
+          created_at?: string
+          duel?: number | null
+          entry_id: string
+          loser_score: number
+          operation: string
+          phase: string
+          previous?: Json | null
+          rank_in_duel?: number | null
+          tournament_public_id: string
+          winning_side: string
+          written_at: number
+        }
+        Update: {
+          created_at?: string
+          duel?: number | null
+          entry_id?: string
+          loser_score?: number
+          operation?: string
+          phase?: string
+          previous?: Json | null
+          rank_in_duel?: number | null
+          tournament_public_id?: string
+          winning_side?: string
+          written_at?: number
+        }
+        Relationships: []
+      }
+      teams: {
+        Row: {
+          id: number
+          label: string
+          player_one_name_key: string
+          player_two_name_key: string
+          team_index: number
+          tournament_public_id: string
+        }
+        Insert: {
+          id?: never
+          label: string
+          player_one_name_key: string
+          player_two_name_key: string
+          team_index: number
+          tournament_public_id: string
+        }
+        Update: {
+          id?: never
+          label?: string
+          player_one_name_key?: string
+          player_two_name_key?: string
+          team_index?: number
+          tournament_public_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teams_player_one_name_key_fkey"
+            columns: ["player_one_name_key"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["name_key"]
+          },
+          {
+            foreignKeyName: "teams_player_two_name_key_fkey"
+            columns: ["player_two_name_key"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["name_key"]
+          },
+          {
+            foreignKeyName: "teams_tournament_public_id_fkey"
+            columns: ["tournament_public_id"]
+            isOneToOne: false
+            referencedRelation: "tournaments"
+            referencedColumns: ["public_id"]
+          },
+        ]
+      }
+      tournament_players: {
+        Row: {
+          id: number
+          player_name_key: string
+          tournament_public_id: string
+        }
+        Insert: {
+          id?: never
+          player_name_key: string
+          tournament_public_id: string
+        }
+        Update: {
+          id?: never
+          player_name_key?: string
+          tournament_public_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournament_players_player_name_key_fkey"
+            columns: ["player_name_key"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["name_key"]
+          },
+          {
+            foreignKeyName: "tournament_players_tournament_public_id_fkey"
+            columns: ["tournament_public_id"]
+            isOneToOne: false
+            referencedRelation: "tournaments"
+            referencedColumns: ["public_id"]
+          },
+        ]
+      }
+      tournaments: {
+        Row: {
+          created_at: number
+          label: string
+          passphrase_hash: string
+          public_id: string
+          start_date: string
+          status: string
+        }
+        Insert: {
+          created_at: number
+          label: string
+          passphrase_hash: string
+          public_id: string
+          start_date: string
+          status?: string
+        }
+        Update: {
+          created_at?: number
+          label?: string
+          passphrase_hash?: string
+          public_id?: string
+          start_date?: string
+          status?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      correct_score:
+        | {
+            Args: {
+              p_duel: number
+              p_journal_entry_id: string
+              p_loser_score: number
+              p_phase: string
+              p_previous: Json
+              p_rank_in_duel: number
+              p_tournament_public_id: string
+              p_winning_side: string
+              p_written_at: number
+            }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_duel?: number
+              p_journal_entry_id: string
+              p_loser_score: number
+              p_phase: string
+              p_previous: Json
+              p_rank_in_duel?: number
+              p_tournament_public_id: string
+              p_winning_side: string
+              p_written_at: number
+            }
+            Returns: undefined
+          }
+      record_score:
+        | {
+            Args: {
+              p_duel: number
+              p_journal_entry_id: string
+              p_loser_score: number
+              p_phase: string
+              p_rank_in_duel: number
+              p_tournament_public_id: string
+              p_winning_side: string
+              p_written_at: number
+            }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_duel?: number
+              p_journal_entry_id: string
+              p_loser_score: number
+              p_phase: string
+              p_rank_in_duel?: number
+              p_tournament_public_id: string
+              p_winning_side: string
+              p_written_at: number
+            }
+            Returns: undefined
+          }
+      save_player: {
+        Args: { p_first_name: string; p_last_name: string; p_name_key: string }
+        Returns: undefined
+      }
+      save_tournament: {
+        Args: {
+          p_created_at: number
+          p_label: string
+          p_passphrase_hash: string
+          p_public_id: string
+          p_start_date: string
+          p_status: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
