@@ -86,7 +86,7 @@ function sidePlayers(round: PlayoffRound, side: TableSide): string {
 
   return configuration === null
     ? '—'
-    : `${playerName(configuration.defenderId)} / ${playerName(configuration.attackerId)}`
+    : `${playerName(configuration.defenderId)} (défense) / ${playerName(configuration.attackerId)} (attaque)`
 }
 
 /** Teams are feminine in French, so the first is "1re" and the others are "Ne". */
@@ -278,11 +278,18 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
                     : 'border-sky-500/40 bg-sky-950/30'
                 "
               >
-                <p class="text-xs tracking-wide text-sky-300 uppercase">{{ SIDE_LABELS.blue }}</p>
-                <p class="mt-1 font-medium">{{ sidePlayers(round, 'blue') }}</p>
-                <p class="text-xs text-chalk-400">
-                  {{ sideTeam(round, 'blue') }} ({{ rankLabel(round.blueTeamId) }}), défense /
-                  attaque
+                <p class="font-medium">
+                  {{ sideTeam(round, 'blue') }}
+                  <span
+                    v-if="rankLabel(round.blueTeamId)"
+                    class="text-xs font-normal text-chalk-400"
+                  >
+                    ({{ rankLabel(round.blueTeamId) }})
+                  </span>
+                </p>
+                <p class="mt-1 text-sm text-chalk-200">{{ sidePlayers(round, 'blue') }}</p>
+                <p class="mt-2 text-xs tracking-wide text-sky-300 uppercase">
+                  {{ SIDE_LABELS.blue }}
                 </p>
               </div>
 
@@ -294,13 +301,18 @@ async function enter(phase: PlayoffPhase, result: MatchResult): Promise<void> {
                     : 'border-pitch-700 bg-pitch-800/60'
                 "
               >
-                <p class="text-xs tracking-wide text-chalk-400 uppercase">
-                  {{ SIDE_LABELS.white }}
+                <p class="font-medium">
+                  {{ sideTeam(round, 'white') }}
+                  <span
+                    v-if="rankLabel(round.whiteTeamId)"
+                    class="text-xs font-normal text-chalk-400"
+                  >
+                    ({{ rankLabel(round.whiteTeamId) }})
+                  </span>
                 </p>
-                <p class="mt-1 font-medium">{{ sidePlayers(round, 'white') }}</p>
-                <p class="text-xs text-chalk-400">
-                  {{ sideTeam(round, 'white') }} ({{ rankLabel(round.whiteTeamId) }}), défense /
-                  attaque
+                <p class="mt-1 text-sm text-chalk-200">{{ sidePlayers(round, 'white') }}</p>
+                <p class="mt-2 text-xs tracking-wide text-chalk-400 uppercase">
+                  {{ SIDE_LABELS.white }}
                 </p>
               </div>
             </div>
