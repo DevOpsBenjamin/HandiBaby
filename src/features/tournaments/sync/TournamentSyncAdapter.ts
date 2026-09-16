@@ -88,6 +88,7 @@ export class TournamentSyncAdapter implements SyncAdapter {
           winning_side: winningSide,
           loser_score: m.loserScore,
           entered_at: m.enteredAt,
+          sides_swapped: m.sidesSwapped ?? false,
         }
       })
 
@@ -236,31 +237,59 @@ export class TournamentSyncAdapter implements SyncAdapter {
         }
       }
 
-      // Update match results
+      // Update match sides and results
       if (remoteMatches) {
         const rMatches = remoteMatches.filter((m) => m.tournament_public_id === rt.public_id)
         for (const rm of rMatches) {
-          if (rm.winning_side !== null && rm.loser_score !== null) {
-            const match = await context.db.matches
-              .where('tournamentId')
-              .equals(tournamentId)
-              .filter((m) => {
-                if (m.phase !== rm.phase) return false
-                if (rm.duel !== null && m.duel !== rm.duel) return false
-                if (rm.rank_in_duel !== null && m.rankInDuel !== rm.rank_in_duel) return false
-                return true
-              })
-              .first()
+          const match = await context.db.matches
+            .where('tournamentId')
+            .equals(tournamentId)
+            .filter((m) => {
+              if (m.phase !== rm.phase) return false
+              if (rm.duel !== null && m.duel !== rm.duel) return false
+              if (rm.rank_in_duel !== null && m.rankInDuel !== rm.rank_in_duel) return false
+              return true
+            })
+            .first()
 
-            if (match !== undefined && match.id !== undefined) {
-              const winningSide = rm.winning_side as TableSide
-              const winnerTeamId = winningSide === 'blue' ? match.blueTeamId : match.whiteTeamId
-              await context.db.matches.update(match.id, {
-                winnerTeamId,
-                loserScore: rm.loser_score,
-                enteredAt: rm.entered_at,
-              })
+          if (match !== undefined && match.id !== undefined) {
+            const rmSidesSwapped = Boolean(rm.sides_swapped)
+            const localSidesSwapped = Boolean(match.sidesSwapped)
+
+            let blueTeamId = match.blueTeamId
+            let whiteTeamId = match.whiteTeamId
+            let blueDefenderId = match.blueDefenderId
+            let blueAttackerId = match.blueAttackerId
+            let whiteDefenderId = match.whiteDefenderId
+            let whiteAttackerId = match.whiteAttackerId
+
+            if (rmSidesSwapped !== localSidesSwapped) {
+              blueTeamId = match.whiteTeamId
+              whiteTeamId = match.blueTeamId
+              blueDefenderId = match.whiteDefenderId
+              blueAttackerId = match.whiteAttackerId
+              whiteDefenderId = match.blueDefenderId
+              whiteAttackerId = match.blueAttackerId
             }
+
+            const updates: Partial<typeof match> = {
+              sidesSwapped: rmSidesSwapped,
+              blueTeamId,
+              whiteTeamId,
+              blueDefenderId,
+              blueAttackerId,
+              whiteDefenderId,
+              whiteAttackerId,
+            }
+
+            if (rm.winning_side !== null && rm.loser_score !== null) {
+              const winningSide = rm.winning_side as TableSide
+              updates.winnerTeamId = winningSide === 'blue' ? blueTeamId : whiteTeamId
+              updates.loserScore = rm.loser_score
+              updates.enteredAt = rm.entered_at
+            }
+
+            await context.db.matches.update(match.id, updates)
           }
         }
       }

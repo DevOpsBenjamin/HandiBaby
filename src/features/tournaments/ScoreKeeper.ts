@@ -7,9 +7,20 @@ import { SIDE_LABELS, type MatchPhase, type TableSide, type Tournament } from '.
 export const SCORE_ADAPTER = 'tournament-scores'
 
 /** One server function per operation, so each keeps its own precondition. */
-export const SCORE_OPERATIONS: Record<JournalOperation, string> = {
+export const SCORE_OPERATIONS = {
   record: 'record-score',
   correct: 'correct-score',
+  swapSides: 'swap-sides',
+} as const
+
+export interface SwapSidesPayload {
+  tournamentPublicId: string
+  phase: MatchPhase
+  duel: number | null
+  rankInDuel: number | null
+  sidesSwapped: boolean
+  balancedRankInDuel: number | null
+  balancedSidesSwapped: boolean | null
 }
 
 export class UnknownMatchError extends Error {
@@ -198,65 +209,94 @@ export class ScoreKeeper {
     tournament: Tournament,
     matchId: number,
   ): Promise<{ balancedMatchId: number | null; balancedMatchOrder: number | null }> {
-    return await this.db.transaction('rw', [this.db.tournaments, this.db.matches], async () => {
-      const match = await this.db.matches.get(matchId)
+    const { balancedMatchId, balancedMatchOrder, swapPayload } = await this.db.transaction(
+      'rw',
+      [this.db.tournaments, this.db.matches],
+      async () => {
+        const match = await this.db.matches.get(matchId)
 
-      if (match === undefined || match.tournamentId !== tournament.id) {
-        throw new UnknownMatchError()
-      }
-
-      const current = await this.db.tournaments.get(match.tournamentId)
-
-      if (match.phase !== 'round-robin' || current?.status !== 'round-robin') {
-        throw new GroupPhaseClosedError()
-      }
-
-      const oldBlueTeamId = match.blueTeamId
-      const oldWhiteTeamId = match.whiteTeamId
-      const oldBlueDefenderId = match.blueDefenderId
-      const oldBlueAttackerId = match.blueAttackerId
-      const oldWhiteDefenderId = match.whiteDefenderId
-      const oldWhiteAttackerId = match.whiteAttackerId
-
-      await this.db.matches.update(matchId, {
-        blueTeamId: oldWhiteTeamId,
-        whiteTeamId: oldBlueTeamId,
-        blueDefenderId: oldWhiteDefenderId,
-        blueAttackerId: oldWhiteAttackerId,
-        whiteDefenderId: oldBlueDefenderId,
-        whiteAttackerId: oldBlueAttackerId,
-      })
-
-      let balancedMatchId: number | null = null
-      let balancedMatchOrder: number | null = null
-
-      if (match.duel !== null && tournament.id !== undefined) {
-        const duelMatches = await this.db.matches
-          .where('tournamentId')
-          .equals(tournament.id)
-          .filter((m) => m.phase === 'round-robin' && m.duel === match.duel && m.id !== matchId)
-          .toArray()
-
-        const unplayedCandidate = duelMatches.find(
-          (m) => m.winnerTeamId === null && m.blueTeamId === oldWhiteTeamId,
-        )
-
-        if (unplayedCandidate !== undefined && unplayedCandidate.id !== undefined) {
-          balancedMatchId = unplayedCandidate.id
-          balancedMatchOrder = (unplayedCandidate.order ?? 0) + 1
-
-          await this.db.matches.update(unplayedCandidate.id, {
-            blueTeamId: unplayedCandidate.whiteTeamId,
-            whiteTeamId: unplayedCandidate.blueTeamId,
-            blueDefenderId: unplayedCandidate.whiteDefenderId,
-            blueAttackerId: unplayedCandidate.whiteAttackerId,
-            whiteDefenderId: unplayedCandidate.blueDefenderId,
-            whiteAttackerId: unplayedCandidate.blueAttackerId,
-          })
+        if (match === undefined || match.tournamentId !== tournament.id) {
+          throw new UnknownMatchError()
         }
-      }
 
-      return { balancedMatchId, balancedMatchOrder }
+        const current = await this.db.tournaments.get(match.tournamentId)
+
+        if (match.phase !== 'round-robin' || current?.status !== 'round-robin') {
+          throw new GroupPhaseClosedError()
+        }
+
+        const oldBlueTeamId = match.blueTeamId
+        const oldWhiteTeamId = match.whiteTeamId
+        const oldBlueDefenderId = match.blueDefenderId
+        const oldBlueAttackerId = match.blueAttackerId
+        const oldWhiteDefenderId = match.whiteDefenderId
+        const oldWhiteAttackerId = match.whiteAttackerId
+        const newSidesSwapped = !match.sidesSwapped
+
+        await this.db.matches.update(matchId, {
+          blueTeamId: oldWhiteTeamId,
+          whiteTeamId: oldBlueTeamId,
+          blueDefenderId: oldWhiteDefenderId,
+          blueAttackerId: oldWhiteAttackerId,
+          whiteDefenderId: oldBlueDefenderId,
+          whiteAttackerId: oldBlueAttackerId,
+          sidesSwapped: newSidesSwapped,
+        })
+
+        let balancedMatchId: number | null = null
+        let balancedMatchOrder: number | null = null
+        let balancedRankInDuel: number | null = null
+        let balancedSidesSwapped: boolean | null = null
+
+        if (match.duel !== null && tournament.id !== undefined) {
+          const duelMatches = await this.db.matches
+            .where('tournamentId')
+            .equals(tournament.id)
+            .filter((m) => m.phase === 'round-robin' && m.duel === match.duel && m.id !== matchId)
+            .toArray()
+
+          const unplayedCandidate = duelMatches.find(
+            (m) => m.winnerTeamId === null && m.blueTeamId === oldWhiteTeamId,
+          )
+
+          if (unplayedCandidate !== undefined && unplayedCandidate.id !== undefined) {
+            balancedMatchId = unplayedCandidate.id
+            balancedMatchOrder = (unplayedCandidate.order ?? 0) + 1
+            balancedRankInDuel = unplayedCandidate.rankInDuel ?? null
+            balancedSidesSwapped = !unplayedCandidate.sidesSwapped
+
+            await this.db.matches.update(unplayedCandidate.id, {
+              blueTeamId: unplayedCandidate.whiteTeamId,
+              whiteTeamId: unplayedCandidate.blueTeamId,
+              blueDefenderId: unplayedCandidate.whiteDefenderId,
+              blueAttackerId: unplayedCandidate.whiteAttackerId,
+              whiteDefenderId: unplayedCandidate.blueDefenderId,
+              whiteAttackerId: unplayedCandidate.blueAttackerId,
+              sidesSwapped: balancedSidesSwapped,
+            })
+          }
+        }
+
+        const swapPayload: SwapSidesPayload = {
+          tournamentPublicId: tournament.publicId,
+          phase: match.phase,
+          duel: match.duel,
+          rankInDuel: match.rankInDuel,
+          sidesSwapped: newSidesSwapped,
+          balancedRankInDuel,
+          balancedSidesSwapped,
+        }
+
+        return { balancedMatchId, balancedMatchOrder, swapPayload }
+      },
+    )
+
+    await this.queue.enqueue({
+      adapter: SCORE_ADAPTER,
+      operation: SCORE_OPERATIONS.swapSides,
+      payload: swapPayload,
     })
+
+    return { balancedMatchId, balancedMatchOrder }
   }
 }

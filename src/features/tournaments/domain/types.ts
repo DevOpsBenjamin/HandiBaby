@@ -103,6 +103,12 @@ export interface Match {
    * frozen in one act instead, when the group phase closes.
    */
   validatedAt?: number | null
+  /**
+   * True when table sides (blue/white) have been inverted compared to the
+   * canonical schedule pattern (e.g. because teams accidentally played on the
+   * opposite side).
+   */
+  sidesSwapped?: boolean
 }
 
 /** Minimal team shape the schedule generator needs. */

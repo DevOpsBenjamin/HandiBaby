@@ -348,5 +348,21 @@ describe('ScoreKeeper', () => {
     expect(updatedFirst?.blueTeamId).toBe(first?.blue.teamId)
     const updatedFourth = await db.matches.get(fourth?.id ?? 0)
     expect(updatedFourth?.blueTeamId).toBe(fourth?.blue.teamId)
+
+    // Verify sidesSwapped property and outbox queuing
+    expect(updatedSecond?.sidesSwapped).toBe(true)
+    expect(updatedThird?.sidesSwapped).toBe(true)
+
+    const queued = await db.outbox.toArray()
+    const swapEntry = queued.find((e) => e.operation === SCORE_OPERATIONS.swapSides)
+    expect(swapEntry).toBeDefined()
+    expect(swapEntry?.payload).toMatchObject({
+      tournamentPublicId: tournament.publicId,
+      duel: 1,
+      rankInDuel: second?.rankInDuel,
+      sidesSwapped: true,
+      balancedRankInDuel: third?.rankInDuel,
+      balancedSidesSwapped: true,
+    })
   })
 })

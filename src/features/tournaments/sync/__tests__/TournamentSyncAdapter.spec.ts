@@ -148,4 +148,103 @@ describe('TournamentSyncAdapter', () => {
     expect(players).toHaveLength(1)
     expect(players[0]?.nameKey).toBe('martin-bob')
   })
+
+  it('downloads remote match with sides_swapped and inverts local match sides', async () => {
+    const tournamentId = await db.tournaments.add({
+      publicId: 'tourn-swapped',
+      label: 'Swapped Edition',
+      startDate: '2026-08-19',
+      status: 'round-robin',
+      passphraseHash: 'hash',
+      createdAt: 1000,
+    })
+
+    const matchId = await db.matches.add({
+      tournamentId,
+      phase: 'round-robin',
+      duel: 2,
+      rankInDuel: 2,
+      blueTeamId: 10,
+      whiteTeamId: 20,
+      blueDefenderId: 1,
+      blueAttackerId: 2,
+      whiteDefenderId: 3,
+      whiteAttackerId: 4,
+      winnerTeamId: null,
+      loserScore: null,
+      enteredAt: null,
+      sidesSwapped: false,
+    })
+
+    const remoteTournaments = [
+      {
+        public_id: 'tourn-swapped',
+        label: 'Swapped Edition',
+        start_date: '2026-08-19',
+        status: 'round-robin',
+        passphrase_hash: 'hash',
+        created_at: 1000,
+      },
+    ]
+
+    const remoteMatches = [
+      {
+        id: 8,
+        tournament_public_id: 'tourn-swapped',
+        phase: 'round-robin',
+        duel: 2,
+        rank_in_duel: 2,
+        sides_swapped: true,
+        winning_side: 'blue',
+        loser_score: 4,
+        entered_at: 123456,
+      },
+    ]
+
+    const fromMock = vi.fn<
+      (table: string) => {
+        select: () => { order?: () => Promise<{ data: unknown[]; error: null }> } | Promise<{ data: unknown[]; error: null }>
+      }
+    >((table: string) => {
+      if (table === 'tournaments') {
+        return {
+          select: () => ({
+            order: () => Promise.resolve({ data: remoteTournaments, error: null }),
+          }),
+        }
+      }
+      if (table === 'matches') {
+        return {
+          select: () => Promise.resolve({ data: remoteMatches, error: null }),
+        }
+      }
+      return {
+        select: () => Promise.resolve({ data: [], error: null }),
+      }
+    })
+
+    const client = {
+      rpc: vi.fn<() => Promise<{ data: null; error: null }>>().mockResolvedValue({ data: null, error: null }),
+      from: fromMock,
+    } as unknown as SupabaseClient<Database, 'app_handibaby'>
+
+    const context: SyncContext = {
+      client,
+      db,
+      cursor: null,
+    }
+
+    await adapter.pull(context)
+
+    const updatedMatch = await db.matches.get(matchId)
+    expect(updatedMatch?.sidesSwapped).toBe(true)
+    expect(updatedMatch?.blueTeamId).toBe(20)
+    expect(updatedMatch?.whiteTeamId).toBe(10)
+    expect(updatedMatch?.blueDefenderId).toBe(3)
+    expect(updatedMatch?.blueAttackerId).toBe(4)
+    expect(updatedMatch?.whiteDefenderId).toBe(1)
+    expect(updatedMatch?.whiteAttackerId).toBe(2)
+    expect(updatedMatch?.winnerTeamId).toBe(20)
+    expect(updatedMatch?.loserScore).toBe(4)
+  })
 })
