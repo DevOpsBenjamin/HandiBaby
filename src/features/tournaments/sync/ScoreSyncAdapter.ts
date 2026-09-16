@@ -5,17 +5,20 @@ import {
   SCORE_ADAPTER,
   SCORE_OPERATIONS,
   type ScoreWritePayload,
+  type SwapSidesPayload,
 } from '../ScoreKeeper'
 import type { MatchResult } from '../domain/score'
 import type { TableSide } from '../domain/types'
 
-export class ScoreSyncAdapter implements SyncAdapter<ScoreWritePayload> {
+export class ScoreSyncAdapter implements SyncAdapter<ScoreWritePayload | SwapSidesPayload> {
   readonly name = SCORE_ADAPTER
 
-  async push(entry: OutboxEntry<ScoreWritePayload>, context: SyncContext): Promise<void> {
-    const payload = entry.payload
-
+  async push(
+    entry: OutboxEntry<ScoreWritePayload | SwapSidesPayload>,
+    context: SyncContext,
+  ): Promise<void> {
     if (entry.operation === SCORE_OPERATIONS.record) {
+      const payload = entry.payload as ScoreWritePayload
       const { error } = await context.client.rpc('record_score', {
         p_journal_entry_id: payload.journalEntryId,
         p_tournament_public_id: payload.tournamentPublicId,
@@ -31,6 +34,7 @@ export class ScoreSyncAdapter implements SyncAdapter<ScoreWritePayload> {
         throw new Error(`Failed to record score on server: ${error.message}`)
       }
     } else if (entry.operation === SCORE_OPERATIONS.correct) {
+      const payload = entry.payload as ScoreWritePayload
       const { error } = await context.client.rpc('correct_score', {
         p_journal_entry_id: payload.journalEntryId,
         p_tournament_public_id: payload.tournamentPublicId,
@@ -45,6 +49,21 @@ export class ScoreSyncAdapter implements SyncAdapter<ScoreWritePayload> {
 
       if (error) {
         throw new Error(`Failed to correct score on server: ${error.message}`)
+      }
+    } else if (entry.operation === SCORE_OPERATIONS.swapSides) {
+      const payload = entry.payload as SwapSidesPayload
+      const { error } = await context.client.rpc('swap_match_sides', {
+        p_tournament_public_id: payload.tournamentPublicId,
+        p_phase: payload.phase,
+        p_duel: payload.duel as unknown as number,
+        p_rank_in_duel: payload.rankInDuel as unknown as number,
+        p_sides_swapped: payload.sidesSwapped,
+        p_balanced_rank_in_duel: (payload.balancedRankInDuel ?? undefined) as unknown as number,
+        p_balanced_sides_swapped: (payload.balancedSidesSwapped ?? undefined) as unknown as boolean,
+      })
+
+      if (error) {
+        throw new Error(`Failed to swap match sides on server: ${error.message}`)
       }
     }
   }

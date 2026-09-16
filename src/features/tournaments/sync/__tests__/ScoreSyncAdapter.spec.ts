@@ -5,7 +5,12 @@ import type { OutboxEntry } from '@/core/db/types'
 import type { Database } from '@/core/supabase/database'
 import type { SyncContext } from '@/core/sync/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { SCORE_ADAPTER, SCORE_OPERATIONS, type ScoreWritePayload } from '../../ScoreKeeper'
+import {
+  SCORE_ADAPTER,
+  SCORE_OPERATIONS,
+  type ScoreWritePayload,
+  type SwapSidesPayload,
+} from '../../ScoreKeeper'
 import { ScoreSyncAdapter } from '../ScoreSyncAdapter'
 
 describe('ScoreSyncAdapter', () => {
@@ -121,6 +126,52 @@ describe('ScoreSyncAdapter', () => {
       p_loser_score: 8,
       p_previous: { winningSide: 'blue', loserScore: 3 },
       p_written_at: 123456799,
+    })
+  })
+
+  it('pushes swap-sides operation via RPC', async () => {
+    const rpcMock = vi.fn<() => Promise<{ data: null; error: null }>>().mockResolvedValue({
+      data: null,
+      error: null,
+    })
+    const client = { rpc: rpcMock } as unknown as SupabaseClient<Database, 'app_handibaby'>
+
+    const payload: SwapSidesPayload = {
+      tournamentPublicId: 'tourn-1',
+      phase: 'round-robin',
+      duel: 2,
+      rankInDuel: 2,
+      sidesSwapped: true,
+      balancedRankInDuel: 3,
+      balancedSidesSwapped: true,
+    }
+
+    const entry: OutboxEntry<SwapSidesPayload> = {
+      id: 3,
+      adapter: SCORE_ADAPTER,
+      operation: SCORE_OPERATIONS.swapSides,
+      payload,
+      createdAt: 123456799,
+      attempts: 0,
+      lastError: null,
+    }
+
+    const context: SyncContext = {
+      client,
+      db,
+      cursor: null,
+    }
+
+    await adapter.push(entry, context)
+
+    expect(rpcMock).toHaveBeenCalledWith('swap_match_sides', {
+      p_tournament_public_id: 'tourn-1',
+      p_phase: 'round-robin',
+      p_duel: 2,
+      p_rank_in_duel: 2,
+      p_sides_swapped: true,
+      p_balanced_rank_in_duel: 3,
+      p_balanced_sides_swapped: true,
     })
   })
 
