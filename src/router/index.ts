@@ -66,6 +66,11 @@ const router = createRouter({
       name: 'player-pool',
       component: () => import('@/features/players/views/PlayerPoolView.vue'),
     },
+    {
+      path: '/regles',
+      name: 'rules',
+      component: () => import('@/views/RulesView.vue'),
+    },
   ],
 })
 
