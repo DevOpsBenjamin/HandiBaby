@@ -38,6 +38,9 @@ onUnmounted(() => {
           <RouterLink to="/joueurs" class="text-sm text-chalk-400 hover:text-chalk-100">
             Vivier
           </RouterLink>
+          <RouterLink to="/regles" class="text-sm text-chalk-400 hover:text-chalk-100">
+            Règles
+          </RouterLink>
         </nav>
 
         <SyncStatusBadge />

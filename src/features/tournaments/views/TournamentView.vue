@@ -251,6 +251,13 @@ async function rename(teamId: number): Promise<void> {
           >
             Classement et configurations
           </RouterLink>
+
+          <RouterLink
+            to="/regles"
+            class="inline-block rounded-lg border border-pitch-700 px-4 py-2 text-sm text-chalk-400 hover:border-ball hover:text-chalk-100"
+          >
+            Règles & Arbitrage
+          </RouterLink>
         </div>
 
         <div v-if="teams.length > 0" class="space-y-3">
