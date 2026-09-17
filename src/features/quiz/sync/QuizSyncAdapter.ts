@@ -11,31 +11,13 @@ export class QuizSyncAdapter implements SyncAdapter<QuizAttempt> {
     if (entry.operation === QUIZ_OPERATIONS.save) {
       const attempt = entry.payload
 
-      const { error } = await context.client.rpc('sync_tournament_bundle', {
-        p_tournament: {
-          public_id: 'quiz-' + attempt.publicId,
-          label: `Quiz - ${attempt.candidateName} (${attempt.score}/${attempt.totalQuestions})`,
-          start_date: new Date(attempt.completedAt).toISOString().split('T')[0],
-          status: 'quiz',
-          passphrase_hash: 'quiz',
-          created_at: attempt.completedAt,
-        } as unknown as Json,
-        p_players: [],
-        p_tournament_players: [],
-        p_teams: [],
-        p_matches: [],
-        p_frozen_edition: {
-          data: {
-            type: 'quiz_attempt',
-            publicId: attempt.publicId,
-            candidateName: attempt.candidateName,
-            score: attempt.score,
-            totalQuestions: attempt.totalQuestions,
-            answers: attempt.answers,
-            completedAt: attempt.completedAt,
-          },
-          frozen_at: attempt.completedAt,
-        } as unknown as Json,
+      const { error } = await context.client.rpc('save_quiz_attempt', {
+        p_public_id: attempt.publicId,
+        p_candidate_name: attempt.candidateName,
+        p_score: attempt.score,
+        p_total_questions: attempt.totalQuestions,
+        p_answers: attempt.answers as unknown as Json,
+        p_completed_at: attempt.completedAt,
       })
 
       if (error) {
@@ -46,29 +28,24 @@ export class QuizSyncAdapter implements SyncAdapter<QuizAttempt> {
 
   async pull(context: SyncContext): Promise<string | null> {
     const { data: rows, error } = await context.client
-      .from('frozen_editions')
+      .from('quiz_attempts')
       .select('*')
-      .like('tournament_public_id', 'quiz-%')
 
     if (error || !rows) {
       return String(Date.now())
     }
 
     for (const row of rows) {
-      const payload = row.data as Record<string, unknown>
-      if (payload && payload.type === 'quiz_attempt' && typeof payload.publicId === 'string') {
-        const publicId = payload.publicId
-        const existing = await context.db.quizAttempts.where('publicId').equals(publicId).first()
-        if (!existing) {
-          await context.db.quizAttempts.add({
-            publicId,
-            candidateName: String(payload.candidateName || 'Anonyme'),
-            score: Number(payload.score || 0),
-            totalQuestions: Number(payload.totalQuestions || 20),
-            answers: (payload.answers as Record<number, string[]>) || {},
-            completedAt: Number(payload.completedAt || row.frozen_at || Date.now()),
-          })
-        }
+      const existing = await context.db.quizAttempts.where('publicId').equals(row.public_id).first()
+      if (!existing) {
+        await context.db.quizAttempts.add({
+          publicId: row.public_id,
+          candidateName: row.candidate_name,
+          score: row.score,
+          totalQuestions: row.total_questions,
+          answers: (row.answers as Record<number, string[]>) || {},
+          completedAt: row.completed_at,
+        })
       }
     }
 

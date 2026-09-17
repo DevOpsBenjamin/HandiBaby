@@ -118,6 +118,21 @@ export class TournamentSyncAdapter implements SyncAdapter {
   }
 
   async #downloadRemoteTournaments(context: SyncContext): Promise<void> {
+    // Purge any legacy quiz attempts mistakenly stored as tournaments in local IndexedDB
+    const legacyQuizTournaments = await context.db.tournaments
+      .filter(
+        (t) =>
+          (t.status as string) === 'quiz' ||
+          t.publicId.startsWith('quiz-') ||
+          t.label.toLowerCase().includes('quiz'),
+      )
+      .toArray()
+    for (const lqt of legacyQuizTournaments) {
+      if (lqt.id !== undefined) {
+        await context.db.tournaments.delete(lqt.id)
+      }
+    }
+
     const { data: remoteTournaments } = await context.client
       .from('tournaments')
       .select('*')
@@ -128,7 +143,10 @@ export class TournamentSyncAdapter implements SyncAdapter {
     }
 
     const filteredTournaments = remoteTournaments.filter(
-      (rt) => rt.status !== 'quiz' && !rt.public_id.startsWith('quiz-'),
+      (rt) =>
+        rt.status !== 'quiz' &&
+        !rt.public_id.startsWith('quiz-') &&
+        !rt.label.toLowerCase().includes('quiz'),
     )
 
     if (filteredTournaments.length === 0) {
