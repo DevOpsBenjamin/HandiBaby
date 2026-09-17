@@ -83,6 +83,14 @@ export class TournamentRepository {
 
   async #sorted(keep: (tournament: Tournament) => boolean): Promise<Tournament[]> {
     const tournaments = await this.db.tournaments.toArray()
-    return tournaments.filter(keep).sort((left, right) => right.createdAt - left.createdAt)
+    return tournaments
+      .filter(
+        (t) =>
+          (t.status as string) !== 'quiz' &&
+          !t.publicId.startsWith('quiz-') &&
+          !t.label.toLowerCase().includes('quiz'),
+      )
+      .filter(keep)
+      .sort((left, right) => right.createdAt - left.createdAt)
   }
 }

@@ -140,20 +140,19 @@ export const useQuizStore = defineStore('quiz', () => {
       if (client) {
         try {
           const { data } = await client
-            .from('frozen_editions')
+            .from('quiz_attempts')
             .select('*')
-            .eq('tournament_public_id', 'quiz-' + publicId)
+            .eq('public_id', publicId)
             .single()
 
-          const payload = data?.data as Record<string, unknown> | null
-          if (payload && payload.type === 'quiz_attempt') {
+          if (data) {
             attempt = await repository.saveAttemptLocally({
-              publicId,
-              candidateName: String(payload.candidateName || 'Victime'),
-              score: Number(payload.score || 0),
-              totalQuestions: Number(payload.totalQuestions || 20),
-              answers: (payload.answers as Record<number, string[]>) || {},
-              completedAt: Number(payload.completedAt || data?.frozen_at || Date.now()),
+              publicId: data.public_id,
+              candidateName: data.candidate_name,
+              score: data.score,
+              totalQuestions: data.total_questions,
+              answers: (data.answers as Record<number, string[]>) || {},
+              completedAt: data.completed_at,
             })
           }
         } catch {

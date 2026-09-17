@@ -25,7 +25,7 @@ describe('QuizSyncAdapter', () => {
   })
 
   describe('push', () => {
-    it('pushes quiz attempt via sync_tournament_bundle RPC', async () => {
+    it('pushes quiz attempt via save_quiz_attempt RPC', async () => {
       const rpcMock = vi.fn<() => Promise<{ data: null; error: null }>>().mockResolvedValue({
         data: null,
         error: null,
@@ -58,31 +58,13 @@ describe('QuizSyncAdapter', () => {
         context,
       )
 
-      expect(rpcMock).toHaveBeenCalledWith('sync_tournament_bundle', {
-        p_tournament: {
-          public_id: 'quiz-uuid-1234',
-          label: 'Quiz - Benjamin (0/20)',
-          start_date: new Date(1700000000000).toISOString().split('T')[0],
-          status: 'quiz',
-          passphrase_hash: 'quiz',
-          created_at: 1700000000000,
-        },
-        p_players: [],
-        p_tournament_players: [],
-        p_teams: [],
-        p_matches: [],
-        p_frozen_edition: {
-          data: {
-            type: 'quiz_attempt',
-            publicId: 'uuid-1234',
-            candidateName: 'Benjamin',
-            score: 0,
-            totalQuestions: 20,
-            answers: { 1: ['none'] },
-            completedAt: 1700000000000,
-          },
-          frozen_at: 1700000000000,
-        },
+      expect(rpcMock).toHaveBeenCalledWith('save_quiz_attempt', {
+        p_public_id: 'uuid-1234',
+        p_candidate_name: 'Benjamin',
+        p_score: 0,
+        p_total_questions: 20,
+        p_answers: { 1: ['none'] },
+        p_completed_at: 1700000000000,
       })
     })
 
@@ -123,22 +105,19 @@ describe('QuizSyncAdapter', () => {
   })
 
   describe('pull', () => {
-    it('pulls remote quiz attempts from frozen_editions into indexedDB', async () => {
-      const likeMock = vi
+    it('pulls remote quiz attempts from quiz_attempts into indexedDB', async () => {
+      const selectMock = vi
         .fn<
           () => Promise<{
             data: Array<{
-              tournament_public_id: string
-              frozen_at: number
-              data: {
-                type: string
-                publicId: string
-                candidateName: string
-                score: number
-                totalQuestions: number
-                answers: Record<number, string[]>
-                completedAt: number
-              }
+              id: number
+              public_id: string
+              candidate_name: string
+              score: number
+              total_questions: number
+              answers: Record<number, string[]>
+              completed_at: number
+              created_at: string
             }>
             error: null
           }>
@@ -146,25 +125,19 @@ describe('QuizSyncAdapter', () => {
         .mockResolvedValue({
           data: [
             {
-              tournament_public_id: 'quiz-uuid-remote-1',
-              frozen_at: 1700000050000,
-              data: {
-                type: 'quiz_attempt',
-                publicId: 'uuid-remote-1',
-                candidateName: 'Lucas',
-                score: 3,
-                totalQuestions: 20,
-                answers: { 1: ['a', 'c'] },
-                completedAt: 1700000050000,
-              },
+              id: 1,
+              public_id: 'uuid-remote-1',
+              candidate_name: 'Lucas',
+              score: 3,
+              total_questions: 20,
+              answers: { 1: ['a', 'c'] },
+              completed_at: 1700000050000,
+              created_at: '2026-09-17T08:00:00Z',
             },
           ],
           error: null,
         })
 
-      const selectMock = vi
-        .fn<() => { like: typeof likeMock }>()
-        .mockReturnValue({ like: likeMock })
       const fromMock = vi
         .fn<() => { select: typeof selectMock }>()
         .mockReturnValue({ select: selectMock })
@@ -178,9 +151,8 @@ describe('QuizSyncAdapter', () => {
 
       await adapter.pull(context)
 
-      expect(fromMock).toHaveBeenCalledWith('frozen_editions')
+      expect(fromMock).toHaveBeenCalledWith('quiz_attempts')
       expect(selectMock).toHaveBeenCalledWith('*')
-      expect(likeMock).toHaveBeenCalledWith('tournament_public_id', 'quiz-%')
 
       const saved = await db.quizAttempts.where('publicId').equals('uuid-remote-1').first()
       expect(saved).toBeDefined()
@@ -199,19 +171,18 @@ describe('QuizSyncAdapter', () => {
         completedAt: 1000,
       })
 
-      const likeMock = vi
+      const selectMock = vi
         .fn<
           () => Promise<{
             data: Array<{
-              tournament_public_id: string
-              data: {
-                type: string
-                publicId: string
-                candidateName: string
-                score: number
-                totalQuestions: number
-                answers: Record<number, string[]>
-              }
+              id: number
+              public_id: string
+              candidate_name: string
+              score: number
+              total_questions: number
+              answers: Record<number, string[]>
+              completed_at: number
+              created_at: string
             }>
             error: null
           }>
@@ -219,23 +190,19 @@ describe('QuizSyncAdapter', () => {
         .mockResolvedValue({
           data: [
             {
-              tournament_public_id: 'quiz-uuid-existing',
-              data: {
-                type: 'quiz_attempt',
-                publicId: 'uuid-existing',
-                candidateName: 'Existing',
-                score: 5,
-                totalQuestions: 20,
-                answers: {},
-              },
+              id: 2,
+              public_id: 'uuid-existing',
+              candidate_name: 'Existing',
+              score: 5,
+              total_questions: 20,
+              answers: {},
+              completed_at: 1000,
+              created_at: '2026-09-17T08:00:00Z',
             },
           ],
           error: null,
         })
 
-      const selectMock = vi
-        .fn<() => { like: typeof likeMock }>()
-        .mockReturnValue({ like: likeMock })
       const fromMock = vi
         .fn<() => { select: typeof selectMock }>()
         .mockReturnValue({ select: selectMock })
