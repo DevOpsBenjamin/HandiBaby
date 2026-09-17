@@ -71,6 +71,17 @@ const router = createRouter({
       name: 'rules',
       component: () => import('@/views/RulesView.vue'),
     },
+    {
+      path: '/quiz',
+      name: 'quiz',
+      component: () => import('@/features/quiz/views/QuizView.vue'),
+    },
+    {
+      path: '/quiz/resultat/:publicId',
+      name: 'quiz-result',
+      component: () => import('@/features/quiz/views/QuizView.vue'),
+      props: true,
+    },
   ],
 })
 

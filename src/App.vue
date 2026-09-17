@@ -41,6 +41,12 @@ onUnmounted(() => {
           <RouterLink to="/regles" class="text-sm text-chalk-400 hover:text-chalk-100">
             Règles
           </RouterLink>
+          <RouterLink
+            to="/quiz"
+            class="text-sm font-medium text-amber-300 hover:text-amber-200 flex items-center gap-1.5"
+          >
+            <span>Interro 📝</span>
+          </RouterLink>
         </nav>
 
         <SyncStatusBadge />
