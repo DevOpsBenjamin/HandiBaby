@@ -127,6 +127,14 @@ export class TournamentSyncAdapter implements SyncAdapter {
       return
     }
 
+    const filteredTournaments = remoteTournaments.filter(
+      (rt) => rt.status !== 'quiz' && !rt.public_id.startsWith('quiz-'),
+    )
+
+    if (filteredTournaments.length === 0) {
+      return
+    }
+
     const { data: remotePlayers } = await context.client.from('players').select('*')
     if (remotePlayers) {
       for (const rp of remotePlayers) {
@@ -152,7 +160,7 @@ export class TournamentSyncAdapter implements SyncAdapter {
     const { data: remoteMatches } = await context.client.from('matches').select('*')
     const { data: remoteFrozen } = await context.client.from('frozen_editions').select('*')
 
-    for (const rt of remoteTournaments) {
+    for (const rt of filteredTournaments) {
       const localTournament = await context.db.tournaments
         .where('publicId')
         .equals(rt.public_id)

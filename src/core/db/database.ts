@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { OutboxEntry, SyncCheckpoint } from './types'
+import type { QuizAttempt } from '@/features/quiz/domain/types'
 import type { Player } from '@/features/players/domain/types'
 import type { FrozenEdition } from '@/features/tournaments/domain/freeze'
 import type { JournalEntry } from '@/features/tournaments/domain/journal'
@@ -22,6 +23,7 @@ export class HandiBabyDatabase extends Dexie {
   matches!: Table<Match, number>
   journal!: Table<JournalEntry, number>
   frozenEditions!: Table<FrozenEdition, number>
+  quizAttempts!: Table<QuizAttempt, number>
 
   constructor(name = 'handibaby') {
     super(name)
@@ -60,6 +62,11 @@ export class HandiBabyDatabase extends Dexie {
     // written once, keyed on the edition so a second close cannot slip past.
     this.version(5).stores({
       frozenEditions: 'tournamentId',
+    })
+
+    // Quiz prank attempt records
+    this.version(6).stores({
+      quizAttempts: '++id, &publicId, candidateName, score, totalQuestions, completedAt',
     })
   }
 

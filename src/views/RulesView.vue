@@ -477,6 +477,13 @@ function selectScenario(id: string) {
             format HandiBaby.
           </p>
         </div>
+
+        <RouterLink
+          to="/quiz"
+          class="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-xs sm:text-sm font-bold text-rose-300 hover:bg-rose-500/20 hover:border-rose-500/60 transition flex items-center gap-1.5 shadow-sm"
+        >
+          <span>Interro Surprise FFFT 📝</span>
+        </RouterLink>
       </div>
 
       <!-- Quick Search Bar -->
